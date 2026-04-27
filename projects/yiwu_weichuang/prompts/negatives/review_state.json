@@ -1,0 +1,67 @@
+{
+  "output/0426/zhihu_2.txt": {
+    "status": "good",
+    "note": "",
+    "updated_at": "2026-04-26T08:50:22"
+  },
+  "output/0426/toutiao_9.txt": {
+    "status": "bad",
+    "note": "太短了，随手记的字数也要多一点，随手记只是语句更碎一些",
+    "updated_at": "2026-04-26T08:52:36"
+  },
+  "output/0426/toutiao_7.txt": {
+    "status": "skip",
+    "note": "",
+    "updated_at": "2026-04-26T08:54:46"
+  },
+  "output/0426/sohu_10.txt": {
+    "status": "good",
+    "note": "",
+    "updated_at": "2026-04-26T08:55:38"
+  },
+  "output/0426/baijiahao_8.txt": {
+    "status": "good",
+    "note": "",
+    "updated_at": "2026-04-26T08:56:00"
+  },
+  "output/0426/baijiahao_5.txt": {
+    "status": "good",
+    "note": "",
+    "updated_at": "2026-04-26T08:56:42"
+  },
+  "output/0426/baijiahao_4.txt": {
+    "status": "good",
+    "note": "",
+    "updated_at": "2026-04-26T08:57:12"
+  },
+  "output/0425/zhihu_9.txt": {
+    "status": "good",
+    "note": "",
+    "updated_at": "2026-04-26T08:57:58"
+  },
+  "output/0427/zhihu_7.txt": {
+    "status": "bad",
+    "note": "随机出来的身份，年纪与行为不匹配，广场舞是年纪大的人适合的",
+    "updated_at": "2026-04-27T10:18:04"
+  },
+  "output/0427/zhihu_6.txt": {
+    "status": "good",
+    "note": "",
+    "updated_at": "2026-04-27T10:18:11"
+  },
+  "output/0427/sohu_3.txt": {
+    "status": "bad",
+    "note": "标题不要出现“皮肤科”等具体科室或医疗项目",
+    "updated_at": "2026-04-27T10:23:35"
+  },
+  "output/0427/sohu_4.txt": {
+    "status": "good",
+    "note": "",
+    "updated_at": "2026-04-27T10:23:39"
+  },
+  "output/0427/sohu_10.txt": {
+    "status": "good",
+    "note": "",
+    "updated_at": "2026-04-27T10:23:46"
+  }
+}

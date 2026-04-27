@@ -1,0 +1,18 @@
+<!-- baseline meta
+mode: short
+profile: 小红书义乌本地探店博主，偶尔也做生活服务类内容
+style: 行文有点像在写攻略，但刻意压住了，会加入一些行业通用数据
+trigger: 陪人去看过，自己也想进一步了解
+first_draft_score: 92
+final_score: 90
+retries: 0
+passed: True
+ab_group: 3
+ab_model_key: doubao
+ab_model_label: Doubao Pro
+annotation: ai_taste=?/10 structure_ok=? publishable=? notes=
+-->
+
+义乌义城医院看痘实地了解了一下，说说我打听到的情况
+
+前阵子陪朋友去看脸上反复冒的红肿痘，常规皮肤镜检查差不多几十到一百多块，面诊的时候医生问的还挺细的，环境还行，也没排多久队，流程走下来挺顺的。我自己脸上常年长闭口还有炎性痘，这段时间擦了好久的药膏都没消，现在还在纠结要不要也去挂个号看看。

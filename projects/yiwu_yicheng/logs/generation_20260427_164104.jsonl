@@ -1,0 +1,1 @@
+{"task_id": 3, "timestamp": "2026-04-27T16:41:04", "platform": "zhihu", "base_keyword": "义乌义城治疗好不好妇科", "error": "[Errno 2] No such file or directory: 'C:\\\\Users\\\\Administrator\\\\Desktop\\\\shared\\\\prompts\\\\platform\\\\zhihu.txt'", "llm_calls": [{"tier": "doubao:lite", "model": "doubao-seed-2-0-lite-260215", "prompt_tokens": 176, "completion_tokens": 326, "error": null}]}

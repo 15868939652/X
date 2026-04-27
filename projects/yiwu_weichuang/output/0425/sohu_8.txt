@@ -1,0 +1,15 @@
+<!-- baseline meta
+mode: short
+profile: 健康科普类账号运营，最近在做妇科检查相关选题
+style: 比较理性，喜欢对比信息，有点内容创作者的习惯，会引用一些常规数据
+trigger: 身边朋友提到了类似的情况
+first_draft_score: 92
+final_score: 95
+retries: 0
+passed: True
+annotation: ai_taste=?/10 structure_ok=? publishable=? notes=
+-->
+
+义乌义城医院去做妇科诊疗是什么感受，说说我了解到的信息
+
+前阵子听身边闺蜜提过义乌义城医院，她之前去做过妇科炎症的相关检查和治疗，说医生问诊问得挺细，也没有乱开不必要的检查项目，普通的炎症排查加开药差不多几百块。我这两天刚好有点外阴瘙痒的情况，正纠结要不要去，还摸不准实际治疗效果到底咋样。

@@ -1,0 +1,17 @@
+<!-- baseline meta
+mode: short
+profile: 55岁女性，帮女儿查，自己不太懂网络
+style: 逻辑清晰，喜欢分点整理信息
+trigger: 在整理本地就医相关信息
+first_draft_score: 75
+final_score: 75
+retries: 0
+passed: True
+annotation: ai_taste=?/10 structure_ok=? publishable=? notes=
+-->
+
+义乌义城医院皮肤科看皮肤病安全吗，我最近正纠结这事
+
+这阵子4月换季，我家姑娘皮肤过敏犯了，红痒好几天都没消。
+刷本地消息的时候看到有人提义乌义城医院皮肤科，我还拿不准网上的信息靠不靠谱。
+就想问问有没有去过的人啊，去那看皮肤病到底安不安全啊？

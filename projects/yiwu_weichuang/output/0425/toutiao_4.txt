@@ -1,0 +1,22 @@
+<!-- baseline meta
+mode: short
+profile: 33岁女性，公司行政，身体最近感觉差了点
+style: 说话比较随意，有点啰嗦
+trigger: 备孕期间查攻略，顺带查到这个
+first_draft_score: 75
+final_score: 75
+retries: 0
+passed: True
+annotation: ai_taste=?/10 structure_ok=? publishable=? notes=
+-->
+
+义乌义城医院值不值得去，备孕做检查有点纠结
+
+最近在备孕期嘛
+总觉得身体容易乏
+想先做个全面的孕前检查
+刷本地攻略的时候看到义乌义城医院
+离我公司也就两站公交
+省得跑大医院排队还要请假
+之前完全没了解过
+有没有去过的能说下实际体验咋样？

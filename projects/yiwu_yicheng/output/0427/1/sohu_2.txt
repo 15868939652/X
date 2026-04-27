@@ -1,0 +1,14 @@
+<!-- baseline meta
+mode: info
+profile: 做义乌本地生活类账号的，平时记录本地店铺和各类服务
+style: 本地洞察型，专注分析本地医疗服务的特点和优势
+trigger: 上周去问了一下，有点疑问想再确认
+first_draft_score: 65
+final_score: 65
+retries: 2
+passed: False
+annotation: ai_taste=?/10 structure_ok=? publishable=? notes=
+-->
+
+
+
