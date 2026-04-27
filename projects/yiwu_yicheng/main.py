@@ -79,6 +79,14 @@ def process_task(task_id: int, base_keyword: str, platform: str, platform_index:
         for _ in range(OUTPUT_PER_KEYWORD):
             article_path = save_article(platform, title, article, platform_index, meta=gen_record)
 
+        # 流式输出标题和内容片段
+        short_title = (title[:40] + "…") if len(title) > 40 else title
+        snippet = article[:180].replace("\n", " ")
+        if sys.stdout:
+            sys.stdout.write(f"[TITLE] {platform} | {short_title}\n")
+            sys.stdout.write(f"[SNIPPET] {platform} | {snippet}…\n")
+            sys.stdout.flush()
+
         # 汇总成一条 baseline 记录
         record = {
             "task_id": task_id,
@@ -115,9 +123,10 @@ def process_task(task_id: int, base_keyword: str, platform: str, platform_index:
         logger.end_task_bucket()
 
 
-def run(platform_only: str = ""):
+def run(platform_only: str = "", custom_count: int = 0):
     profile = get_active_profile()
     brand = profile["brand"]
+    task_total = custom_count if custom_count > 0 else BATCH_SIZE
 
     show_header(brand)
     log_path = logger.init_session()
@@ -151,7 +160,7 @@ def run(platform_only: str = ""):
     derm_keywords = df[df["科室"] == "皮肤科"][keyword_col].dropna().tolist()
     exam_keywords = df[df["科室"] == "常规体检"][keyword_col].dropna().tolist()
 
-    total = BATCH_SIZE
+    total = task_total
     gyn_count = max(1, int(total * 0.3))
     derm_count = max(1, int(total * 0.6))
     exam_count = max(1, total - gyn_count - derm_count)
@@ -161,6 +170,8 @@ def run(platform_only: str = ""):
     random.shuffle(exam_keywords)
 
     def ensure_enough(keywords, count, category):
+        if not keywords:
+            return []
         if len(keywords) < count:
             while len(keywords) < count:
                 keywords.extend(keywords[:count - len(keywords)])
@@ -176,9 +187,12 @@ def run(platform_only: str = ""):
     platforms = ["zhihu", "sohu", "baijiahao", "toutiao"]
     if platform_only:
         platforms = [platform_only]
-    per_platform = 3 if platform_only else max(1, BATCH_SIZE // len(platforms))
+    per_platform = task_total if platform_only else max(1, task_total // len(platforms))
     total = per_platform * len(platforms)
 
+    if not selected_kw:
+        console.print("[red][ERR][/red] 关键词库为空，请检查 keyword 文件")
+        return
     if len(selected_kw) < total:
         while len(selected_kw) < total:
             selected_kw.extend(selected_kw[:total - len(selected_kw)])
@@ -216,6 +230,19 @@ def run(platform_only: str = ""):
 
 if __name__ == "__main__":
     platform_only = ""
-    if len(sys.argv) >= 3 and sys.argv[1] == "--platform":
-        platform_only = sys.argv[2].strip()
-    run(platform_only=platform_only)
+    custom_count = 0
+    args = sys.argv[1:]
+    i = 0
+    while i < len(args):
+        if args[i] == "--platform" and i + 1 < len(args):
+            platform_only = args[i + 1].strip()
+            i += 2
+        elif args[i] == "--count" and i + 1 < len(args):
+            try:
+                custom_count = int(args[i + 1])
+            except ValueError:
+                pass
+            i += 2
+        else:
+            i += 1
+    run(platform_only=platform_only, custom_count=custom_count)

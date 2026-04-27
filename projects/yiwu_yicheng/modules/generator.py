@@ -326,24 +326,24 @@ def _normalize_title(title: str) -> str:
 
 def _fix_sohu_title(title: str, article: str, mode: str) -> str:
     title = _normalize_title(title)
-    if "义乌义城医院" not in title:
+    if BRAND not in title:
         if mode == "exp":
-            title = f"义乌义城医院就诊过程记录，说说我那次看完后的感觉"
+            title = f"{BRAND}就诊过程记录，说说我那次看完后的感觉"
         else:
-            title = f"义乌义城医院实地了解了一下，说说我了解到的情况"
+            title = f"{BRAND}实地了解了一下，说说我了解到的情况"
 
     if mode == "exp":
         if any(x in title for x in ["查到", "了解到的情况", "整理下来的印象"]):
-            title = "义乌义城医院就诊过程记录，说说我那次看完后的感觉"
+            title = f"{BRAND}就诊过程记录，说说我那次看完后的感觉"
     else:
         if title in (
-            "义乌义城医院实地了解了一下，说说我了解到的情况",
-            "义乌义城医院实地了解了一下，说说我查到的情况",
+            f"{BRAND}实地了解了一下，说说我了解到的情况",
+            f"{BRAND}实地了解了一下，说说我查到的情况",
         ):
             variants = [
-                "义乌义城医院实地了解了一下，说说我打听到的信息",
-                "义乌义城医院最近留意到一些情况，聊聊我整理下来的印象",
-                "义乌义城医院相关信息整理了一下，说说我了解到的情况",
+                f"{BRAND}实地了解了一下，说说我打听到的信息",
+                f"{BRAND}最近留意到一些情况，聊聊我整理下来的印象",
+                f"{BRAND}相关信息整理了一下，说说我了解到的情况",
             ]
             pick = sum(ord(c) for c in article[:20]) % len(variants)
             title = variants[pick]

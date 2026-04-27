@@ -1,4 +1,4 @@
-import os
+from project_paths import prompt_path
 from config import BRAND, AUX_PROVIDER
 from modules.llm import call_llm
 
@@ -19,7 +19,7 @@ def expand_keywords(core_keyword: str, template: str) -> list:
 
 def expand_one(core_keyword: str) -> str:
     """单次扩展：从核心词生成一个具体的长尾搜索词（使用辅助模型快速链路）"""
-    path = os.path.join("prompts", "keyword_expand_one.txt")
+    path = prompt_path("keyword_expand_one.txt")
     with open(path, "r", encoding="utf-8") as f:
         template = f.read()
 

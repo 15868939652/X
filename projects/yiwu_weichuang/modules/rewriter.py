@@ -1,5 +1,5 @@
-import os
 import random
+from project_paths import prompt_path
 from config import AUX_PROVIDER, GENERATOR_PROVIDER
 from modules.llm import call_llm
 
@@ -26,7 +26,7 @@ PROBLEM_TO_SEGMENT = {
 
 
 def _load(name: str) -> str:
-    path = os.path.join("prompts", "rewriter", name)
+    path = prompt_path("rewriter", name)
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
 

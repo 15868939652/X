@@ -1,10 +1,10 @@
-import os
+from project_paths import prompt_path
 from config import AUX_PROVIDER
 from modules.llm import call_llm
 
 
 def _load(name: str) -> str:
-    path = os.path.join("prompts", "anti_ai", name)
+    path = prompt_path("anti_ai", name)
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
 

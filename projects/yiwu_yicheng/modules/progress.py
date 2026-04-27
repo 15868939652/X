@@ -1,9 +1,15 @@
 from contextlib import contextmanager
+import sys
 from rich.console import Console
 from rich.panel import Panel
 
 # highlight=False 避免并发时数字被随机上色干扰阅读
-console = Console(highlight=False)
+console = Console(highlight=False, legacy_windows=False)
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 
 def show_header(brand: str) -> None:
