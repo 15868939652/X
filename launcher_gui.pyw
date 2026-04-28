@@ -7,9 +7,12 @@ import subprocess
 import webbrowser
 from datetime import datetime
 import tkinter as tk
+from tkinter import messagebox
+
 import customtkinter as ctk
 
-APP_TITLE = "X 启动台"
+APP_TITLE = "多平台文章生成器"
+APP_SUBTITLE = "多平台优化与内容质控中心"
 
 if getattr(sys, "frozen", False):
     ROOT_DIR = sys._MEIPASS
@@ -22,41 +25,51 @@ HOSPITALS = {
     "yiwu_yicheng": {
         "label": "义乌义城医院",
         "dir": os.path.join(PROJECTS_DIR, "yiwu_yicheng"),
-        "accent": "#007aff",
-        "accent_soft": "#e8f2ff",
-        "accent_mid": "#b4d5fe",
-        "hover": "#0066d6",
+        "accent": "#2F76B7",
+        "accent_deep": "#1E578C",
+        "accent_soft": "#EEF5FC",
+        "accent_line": "#C9DDF0",
+        "glow": "#79AEDD",
     },
     "yiwu_weichuang": {
         "label": "义乌微创医院",
         "dir": os.path.join(PROJECTS_DIR, "yiwu_weichuang"),
-        "accent": "#ff375f",
-        "accent_soft": "#ffe8ed",
-        "accent_mid": "#ffb3c1",
-        "hover": "#e63054",
+        "accent": "#D86C9A",
+        "accent_deep": "#B95481",
+        "accent_soft": "#FFF3F8",
+        "accent_line": "#F4C7DA",
+        "glow": "#F2A8C7",
     },
 }
+
 PLATFORMS = {
     "all": "全平台",
     "zhihu": "知乎",
     "sohu": "搜狐",
-    "baijiahao": "百家",
+    "baijiahao": "百家号",
     "toutiao": "头条",
 }
-STAGE_STEPS = ["长尾扩展", "首稿生成", "去AI化", "评分重写", "保存完成"]
 
-C_PAGE    = "#f2f2f7"
-C_CARD    = "#ffffff"
-C_CARD_BD = "#e5e5ea"
-C_TITLE   = "#1d1d1f"
-C_SUBTLE  = "#6b6b70"
-C_HINT    = "#86868b"
-C_BG2     = "#f2f2f7"
-C_CONS_BG = "#fafafa"
-C_CONS_FG = "#2c2c2e"
-C_GOOD    = "#248a52"
-C_WARN    = "#c27800"
-C_BAD     = "#d63030"
+STAGE_STEPS = ["长尾扩展", "首稿生成", "去AI化", "评分重写", "保存完成"]
+STAGE_MILESTONES = [0.10, 0.52, 0.74, 0.90, 1.00]
+BASE_STAGE_SECONDS = [10, 34, 18, 20, 10]
+
+PALETTE = {
+    "page": "#F4F8FB",
+    "sidebar": "#11314A",
+    "sidebar_card": "#183B56",
+    "surface": "#FFFFFF",
+    "surface_alt": "#EDF4F9",
+    "border": "#D5E1EB",
+    "text": "#12324A",
+    "muted": "#4D6B82",
+    "soft": "#7F97AB",
+    "success": "#15803D",
+    "warning": "#B45309",
+    "danger": "#B91C1C",
+    "log_bg": "#F7FBFE",
+    "log_text": "#355066",
+}
 
 ctk.set_appearance_mode("light")
 ctk.set_default_color_theme("blue")
@@ -66,9 +79,9 @@ class LauncherApp:
     def __init__(self):
         self.root = ctk.CTk()
         self.root.title(APP_TITLE)
-        self.root.geometry("1360x920")
-        self.root.minsize(1100, 740)
-        self.root.configure(fg_color=C_PAGE)
+        self.root.geometry("1360x860")
+        self.root.minsize(1120, 720)
+        self.root.configure(fg_color=PALETTE["page"])
 
         self.process = None
         self.process_mode = None
@@ -81,9 +94,11 @@ class LauncherApp:
         self.progress_target = 12
         self._remain_target = 0
         self.run_output_baseline_ts = 0.0
-        self.current_stage = "待启动"
+        self.current_stage = "准备就绪"
         self.current_run_label = "全量模式"
         self.stage_index = -1
+        self.visual_progress = 0.0
+        self.stage_started_at = None
         self._selected_mode = "all"
         self._toast_after_id = None
         self._flask_thread = None
@@ -119,328 +134,633 @@ class LauncherApp:
     def _read_config_int(self, key: str, default: int) -> int:
         try:
             with open(self._config_path(), "r", encoding="utf-8") as f:
-                m = re.search(rf"^{key}\s*=\s*(\d+)", f.read(), re.MULTILINE)
-                return int(m.group(1)) if m else default
+                match = re.search(rf"^{key}\s*=\s*(\d+)", f.read(), re.MULTILINE)
+                return int(match.group(1)) if match else default
         except Exception:
             return default
-
-    # ═══════════════ UI ═══════════════
 
     def _build_ui(self):
         self.root.grid_columnconfigure(0, weight=0)
         self.root.grid_columnconfigure(1, weight=1)
         self.root.grid_rowconfigure(0, weight=1)
         self.root.grid_rowconfigure(1, weight=0)
-        self._build_left()
-        self._build_right()
-        self._build_statusbar()
+        self._build_sidebar()
+        self._build_main_panel()
+        self._build_footer()
 
-    def _card(self, p, **kw):
-        return ctk.CTkFrame(p, corner_radius=16, fg_color=C_CARD,
-                            border_width=1, border_color=C_CARD_BD, **kw)
+    def _panel(self, parent, fg_color=None, border_color=None, radius=24):
+        return ctk.CTkFrame(
+            parent,
+            fg_color=fg_color or PALETTE["surface"],
+            corner_radius=radius,
+            border_width=1,
+            border_color=border_color or PALETTE["border"],
+        )
 
-    def _section(self, parent, text: str):
-        return ctk.CTkLabel(parent, text=text,
-                            font=ctk.CTkFont(family="Microsoft YaHei UI", size=11, weight="bold"),
-                            text_color=C_SUBTLE)
+    def _section_label(self, parent, text: str, text_color=None):
+        return ctk.CTkLabel(
+            parent,
+            text=text,
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=12, weight="bold"),
+            text_color=text_color or PALETTE["muted"],
+        )
 
-    def _build_left(self):
-        scroll = ctk.CTkScrollableFrame(self.root, width=320, fg_color="transparent",
-                                        scrollbar_button_color="#d1d1d6",
-                                        scrollbar_button_hover_color="#aeaeb2")
-        scroll.grid(row=0, column=0, sticky="ns", padx=(24, 8), pady=10)
+    def _build_sidebar(self):
+        sidebar = ctk.CTkFrame(
+            self.root,
+            width=332,
+            fg_color=PALETTE["sidebar"],
+            corner_radius=0,
+        )
+        sidebar.grid(row=0, column=0, sticky="nsew")
+        sidebar.grid_propagate(False)
+        sidebar.grid_rowconfigure(0, weight=1)
+        sidebar.grid_columnconfigure(0, weight=1)
+        self.sidebar = sidebar
+
+        scroll = ctk.CTkScrollableFrame(
+            sidebar,
+            fg_color="transparent",
+            corner_radius=0,
+            scrollbar_button_color="#365A77",
+            scrollbar_button_hover_color="#4A708F",
+        )
+        scroll.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         scroll.grid_columnconfigure(0, weight=1)
+        self.sidebar_scroll = scroll
 
-        # ── 医院 ──
-        c1 = self._card(scroll)
-        c1.grid(row=0, column=0, sticky="ew", pady=(0, 8))
-        i1 = ctk.CTkFrame(c1, fg_color="transparent")
-        i1.pack(fill="x", padx=18, pady=14)
-        self._section(i1, "选择医院").pack(anchor="w", pady=(0, 8))
+        hero = ctk.CTkFrame(scroll, fg_color="transparent")
+        hero.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 14))
+
+        self.brand_mark = ctk.CTkLabel(
+            hero,
+            text="X",
+            width=58,
+            height=58,
+            corner_radius=18,
+            font=ctk.CTkFont(family="Segoe UI Semibold", size=26, weight="bold"),
+            text_color="#FFFFFF",
+        )
+        self.brand_mark.pack(anchor="w")
+
+        self.hero_title = ctk.CTkLabel(
+            hero,
+            text=APP_TITLE,
+            font=ctk.CTkFont(family="Segoe UI Semibold", size=25, weight="bold"),
+            text_color="#F9FAFB",
+        )
+        self.hero_title.pack(anchor="w", pady=(14, 4))
+
+        self.hero_subtitle = ctk.CTkLabel(
+            hero,
+            text=APP_SUBTITLE,
+            justify="left",
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=13),
+            text_color="#CBD5E1",
+        )
+        self.hero_subtitle.pack(anchor="w")
+
+        self.hero_hint = ctk.CTkLabel(
+            hero,
+            text="围绕多平台发布、过审率、真人感、去重复和交付效率打造的医疗内容工作台。",
+            justify="left",
+            wraplength=248,
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=11),
+            text_color="#94A3B8",
+        )
+        self.hero_hint.pack(anchor="w", pady=(10, 0))
+
+        self.hospital_card = self._panel(scroll, fg_color=PALETTE["sidebar_card"], border_color="#355470", radius=20)
+        self.hospital_card.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 12))
+        hc = ctk.CTkFrame(self.hospital_card, fg_color="transparent")
+        hc.pack(fill="x", padx=16, pady=16)
+        self._section_label(hc, "选择医院", "#E5E7EB").pack(anchor="w", pady=(0, 12))
 
         self.btn_yicheng = ctk.CTkButton(
-            i1, text="   义乌义城医院", anchor="w", height=42,
+            hc,
+            text="义乌义城医院",
+            anchor="w",
+            height=48,
+            corner_radius=14,
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=14, weight="bold"),
             command=lambda: self.switch_hospital("yiwu_yicheng"),
-            corner_radius=12, font=ctk.CTkFont(family="Microsoft YaHei UI", size=13))
-        self.btn_yicheng.pack(fill="x", pady=(0, 6))
+        )
+        self.btn_yicheng.pack(fill="x", pady=(0, 8))
+
         self.btn_weichuang = ctk.CTkButton(
-            i1, text="   义乌微创医院", anchor="w", height=42,
+            hc,
+            text="义乌微创医院",
+            anchor="w",
+            height=48,
+            corner_radius=14,
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=14, weight="bold"),
             command=lambda: self.switch_hospital("yiwu_weichuang"),
-            corner_radius=12, font=ctk.CTkFont(family="Microsoft YaHei UI", size=13))
+        )
         self.btn_weichuang.pack(fill="x")
 
-        self.cfg_label = ctk.CTkLabel(i1, text="", font=ctk.CTkFont(family="Microsoft YaHei UI", size=11),
-                                      text_color=C_HINT)
-        self.cfg_label.pack(anchor="w", pady=(8, 0))
+        self.cfg_label = ctk.CTkLabel(
+            hc,
+            text="",
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=12),
+            text_color="#94A3B8",
+        )
+        self.cfg_label.pack(anchor="w", pady=(12, 0))
 
-        # ── 进度 ──
-        c2 = self._card(scroll)
-        c2.grid(row=1, column=0, sticky="ew", pady=8)
-        i2 = ctk.CTkFrame(c2, fg_color="transparent")
-        i2.pack(fill="x", padx=18, pady=14)
+        self.control_card = self._panel(scroll, fg_color=PALETTE["sidebar_card"], border_color="#355470", radius=20)
+        self.control_card.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 12))
+        cc = ctk.CTkFrame(self.control_card, fg_color="transparent")
+        cc.pack(fill="x", padx=16, pady=16)
+        self._section_label(cc, "生成设置", "#E5E7EB").pack(anchor="w", pady=(0, 12))
 
-        self.prog_title = self._section(i2, "任务进度")
-        self.prog_title.pack(anchor="w", pady=(0, 6))
+        count_row = ctk.CTkFrame(cc, fg_color="transparent")
+        count_row.pack(fill="x", pady=(0, 12))
+        ctk.CTkLabel(
+            count_row,
+            text="生成篇数",
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=13),
+            text_color="#E5E7EB",
+        ).pack(side="left")
 
-        self.stage_label = ctk.CTkLabel(i2, text="准备就绪",
-                                        font=ctk.CTkFont(family="Microsoft YaHei UI", size=13), text_color=C_TITLE)
-        self.stage_label.pack(anchor="w", pady=(0, 8))
-
-        self.stage_canvas = tk.Canvas(i2, height=52, bd=0, highlightthickness=0, bg=C_CARD)
-        self.stage_canvas.pack(fill="x", pady=(0, 8))
-
-        self.progress_bar = ctk.CTkProgressBar(i2, height=8, corner_radius=4,
-                                               progress_color=self._cfg()["accent"], fg_color=C_BG2)
-        self.progress_bar.pack(fill="x", pady=(0, 4))
-        self.progress_bar.set(0)
-
-        row_pct = ctk.CTkFrame(i2, fg_color="transparent")
-        row_pct.pack(fill="x")
-        self.stats_label = ctk.CTkLabel(row_pct, text="已保存 0 篇 · 错误 0 条",
-                                        font=ctk.CTkFont(family="Microsoft YaHei UI", size=11), text_color=C_HINT)
-        self.stats_label.pack(side="left")
-        self.progress_pct = ctk.CTkLabel(row_pct, text="0%",
-                                         font=ctk.CTkFont(family="Microsoft YaHei UI", size=18, weight="bold"),
-                                         text_color=self._cfg()["accent"])
-        self.progress_pct.pack(side="right")
-
-        self.speed_label = ctk.CTkLabel(i2, text="",
-                                        font=ctk.CTkFont(family="Microsoft YaHei UI", size=10), text_color=C_HINT)
-        self.speed_label.pack(anchor="w", pady=(4, 0))
-
-        # ── 控制 ──
-        c3 = self._card(scroll)
-        c3.grid(row=2, column=0, sticky="ew", pady=8)
-        i3 = ctk.CTkFrame(c3, fg_color="transparent")
-        i3.pack(fill="x", padx=18, pady=14)
-
-        self._section(i3, "生成控制").pack(anchor="w", pady=(0, 8))
-
-        # Count row
-        cnt_row = ctk.CTkFrame(i3, fg_color="transparent")
-        cnt_row.pack(fill="x", pady=(0, 8))
-        ctk.CTkLabel(cnt_row, text="生成篇数：", font=ctk.CTkFont(family="Microsoft YaHei UI", size=12),
-                     text_color=C_TITLE).pack(side="left")
-        self.count_entry = ctk.CTkEntry(cnt_row, width=66, height=32, justify="center",
-                                        font=ctk.CTkFont(family="Microsoft YaHei UI", size=13),
-                                        corner_radius=8, border_color=C_CARD_BD)
-        self.count_entry.pack(side="left", padx=(8, 0))
+        self.count_entry = ctk.CTkEntry(
+            count_row,
+            width=84,
+            height=36,
+            justify="center",
+            corner_radius=10,
+            border_color="#6B879E",
+            fg_color="#24415A",
+            text_color="#F9FAFB",
+            font=ctk.CTkFont(family="Segoe UI Semibold", size=14),
+        )
+        self.count_entry.pack(side="right")
         self.count_entry.insert(0, "12")
-        ctk.CTkLabel(cnt_row, text="篇", font=ctk.CTkFont(family="Microsoft YaHei UI", size=12),
-                     text_color=C_HINT).pack(side="left", padx=(6, 0))
 
-        # Mode selector — single row 5 buttons
-        mode_row = ctk.CTkFrame(i3, fg_color="transparent")
-        mode_row.pack(fill="x", pady=(0, 10))
-        for i in range(5):
-            mode_row.grid_columnconfigure(i, weight=1, uniform="mode")
+        mode_wrap = ctk.CTkFrame(cc, fg_color="transparent")
+        mode_wrap.pack(fill="x")
+        mode_wrap.grid_columnconfigure((0, 1), weight=1, uniform="mode")
+        mode_wrap.grid_columnconfigure((2, 3), weight=1, uniform="mode")
         self._mode_btns = {}
         keys = ["all", "zhihu", "sohu", "baijiahao", "toutiao"]
-        for i, key in enumerate(keys):
+        for idx, key in enumerate(keys):
+            row = idx // 2 if idx < 4 else 2
+            col = idx % 2 if idx < 4 else 0
+            span = 1 if idx < 4 else 2
             btn = ctk.CTkButton(
-                mode_row, text=PLATFORMS[key], height=30,
+                mode_wrap,
+                text=PLATFORMS[key],
+                height=34,
+                corner_radius=10,
+                font=ctk.CTkFont(family="Microsoft YaHei UI", size=12, weight="bold"),
                 command=lambda k=key: self._set_mode(k),
-                corner_radius=8, font=ctk.CTkFont(family="Microsoft YaHei UI", size=11))
-            btn.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 2, 0 if i == 4 else 2))
+            )
+            btn.grid(row=row, column=col, columnspan=span, sticky="ew", padx=4, pady=4)
             self._mode_btns[key] = btn
 
-        # Start/Stop row
-        btn_row = ctk.CTkFrame(i3, fg_color="transparent")
-        btn_row.pack(fill="x", pady=(0, 4))
-        btn_row.grid_columnconfigure(0, weight=1)
-        btn_row.grid_columnconfigure(1, weight=1)
+        self.action_card = self._panel(scroll, fg_color=PALETTE["sidebar_card"], border_color="#355470", radius=20)
+        self.action_card.grid(row=3, column=0, sticky="ew", padx=12, pady=(0, 12))
+        ac = ctk.CTkFrame(self.action_card, fg_color="transparent")
+        ac.pack(fill="x", padx=16, pady=16)
+        self._section_label(ac, "运行控制", "#E5E7EB").pack(anchor="w", pady=(0, 12))
 
         self.btn_start = ctk.CTkButton(
-            btn_row, text="▶  开始生成", height=42,
+            ac,
+            text="开始生成",
+            height=48,
+            corner_radius=14,
+            font=ctk.CTkFont(family="Segoe UI Semibold", size=15, weight="bold"),
             command=lambda: self.start_process("main"),
-            corner_radius=12, font=ctk.CTkFont(family="Microsoft YaHei UI", size=13, weight="bold"))
-        self.btn_start.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        )
+        self.btn_start.pack(fill="x", pady=(0, 8))
 
         self.btn_stop = ctk.CTkButton(
-            btn_row, text="■  停止", height=42, command=self.stop_process,
-            corner_radius=12, font=ctk.CTkFont(family="Microsoft YaHei UI", size=13, weight="bold"),
-            fg_color=C_CARD, text_color=C_BAD,
-            border_width=1.5, border_color=C_BAD, hover_color="#fff0f0")
-        self.btn_stop.grid(row=0, column=1, sticky="ew", padx=(4, 0))
+            ac,
+            text="停止当前任务",
+            height=44,
+            corner_radius=14,
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=13, weight="bold"),
+            command=self.stop_process,
+        )
+        self.btn_stop.pack(fill="x")
 
-        # Continue (hidden initially)
         self.btn_continue = ctk.CTkButton(
-            i3, text="继续生成剩余篇数", height=36,
-            command=self._continue_process, corner_radius=12,
-            font=ctk.CTkFont(family="Microsoft YaHei UI", size=12, weight="bold"))
+            ac,
+            text="继续生成剩余篇数",
+            height=40,
+            corner_radius=12,
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=12, weight="bold"),
+            command=self._continue_process,
+        )
 
-        # Review button
+        self.quick_card = self._panel(scroll, fg_color=PALETTE["sidebar_card"], border_color="#355470", radius=20)
+        self.quick_card.grid(row=4, column=0, sticky="ew", padx=12, pady=(0, 12))
+        qc = ctk.CTkFrame(self.quick_card, fg_color="transparent")
+        qc.pack(fill="x", padx=16, pady=16)
+        qc.grid_columnconfigure((0, 1), weight=1, uniform="quick")
+        self._section_label(qc, "快捷入口", "#E5E7EB").pack(anchor="w", pady=(0, 12))
+
         self.btn_review = ctk.CTkButton(
-            i3, text="审阅台（浏览器打开）", height=32,
-            command=self._start_review, corner_radius=10,
-            font=ctk.CTkFont(family="Microsoft YaHei UI", size=11))
-        self.btn_review.pack(fill="x", pady=(6, 0))
+            qc,
+            text="打开审阅台",
+            height=36,
+            corner_radius=12,
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=12, weight="bold"),
+            command=self._start_review,
+        )
+        self.btn_review.pack(fill="x", pady=(0, 8))
 
-        # ── 快捷入口 ──
-        c4 = self._card(scroll)
-        c4.grid(row=3, column=0, sticky="ew")
-        i4 = ctk.CTkFrame(c4, fg_color="transparent")
-        i4.pack(fill="x", padx=18, pady=14)
-
-        self._section(i4, "快捷入口").pack(anchor="w", pady=(0, 8))
-
-        r1 = ctk.CTkFrame(i4, fg_color="transparent")
-        r1.pack(fill="x", pady=(0, 4))
-        r1.grid_columnconfigure(0, weight=1)
-        r1.grid_columnconfigure(1, weight=1)
+        quick_grid = ctk.CTkFrame(qc, fg_color="transparent")
+        quick_grid.pack(fill="x")
+        quick_grid.grid_columnconfigure((0, 1), weight=1, uniform="quick")
 
         self.btn_output = ctk.CTkButton(
-            r1, text="output", height=30,
+            quick_grid,
+            text="输出目录",
+            height=34,
+            corner_radius=10,
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=12),
             command=lambda: self._open_path(self._output_dir()),
-            corner_radius=8, font=ctk.CTkFont(family="Microsoft YaHei UI", size=11))
-        self.btn_output.grid(row=0, column=0, sticky="ew", padx=(0, 3))
+        )
+        self.btn_output.grid(row=0, column=0, sticky="ew", padx=(0, 4), pady=(0, 6))
+
         self.btn_latest = ctk.CTkButton(
-            r1, text="最新生成", height=30,
+            quick_grid,
+            text="最新批次",
+            height=34,
+            corner_radius=10,
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=12),
             command=self.open_latest_output_folder,
-            corner_radius=8, font=ctk.CTkFont(family="Microsoft YaHei UI", size=11))
-        self.btn_latest.grid(row=0, column=1, sticky="ew", padx=(3, 0))
+        )
+        self.btn_latest.grid(row=0, column=1, sticky="ew", padx=(4, 0), pady=(0, 6))
+
+        self.btn_txt_dir = ctk.CTkButton(
+            quick_grid,
+            text="最新TXT目录",
+            height=34,
+            corner_radius=10,
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=12),
+            command=self.open_latest_txt_folder,
+        )
+        self.btn_txt_dir.grid(row=1, column=0, sticky="ew", padx=(0, 4), pady=(0, 6))
+
+        self.btn_txt_file = ctk.CTkButton(
+            quick_grid,
+            text="最新TXT文件",
+            height=34,
+            corner_radius=10,
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=12),
+            command=self.open_latest_txt_file,
+        )
+        self.btn_txt_file.grid(row=1, column=1, sticky="ew", padx=(4, 0), pady=(0, 6))
 
         self.btn_logs = ctk.CTkButton(
-            i4, text="logs", height=30,
+            quick_grid,
+            text="运行日志",
+            height=34,
+            corner_radius=10,
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=12),
             command=lambda: self._open_path(self._logs_dir()),
-            corner_radius=8, font=ctk.CTkFont(family="Microsoft YaHei UI", size=11))
-        self.btn_logs.pack(fill="x")
+        )
+        self.btn_logs.grid(row=2, column=0, columnspan=2, sticky="ew")
 
-    def _build_right(self):
-        right = ctk.CTkFrame(self.root, fg_color="transparent")
-        right.grid(row=0, column=1, sticky="nsew", padx=(8, 24), pady=10)
-        right.grid_columnconfigure(0, weight=1)
-        right.grid_rowconfigure(0, weight=0)
-        right.grid_rowconfigure(1, weight=1)
+        self.sidebar_note = ctk.CTkLabel(
+            scroll,
+            text="适合用于知乎、搜狐、百家号、头条等平台的医疗内容批量生成，建议交付前完成一轮实跑验收。",
+            wraplength=252,
+            justify="left",
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=11),
+            text_color="#94A3B8",
+        )
+        self.sidebar_note.grid(row=5, column=0, sticky="ew", padx=16, pady=(2, 18))
 
-        # Header
-        topf = ctk.CTkFrame(right, fg_color="transparent")
-        topf.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+    def _build_main_panel(self):
+        main = ctk.CTkFrame(self.root, fg_color="transparent")
+        main.grid(row=0, column=1, sticky="nsew", padx=(16, 16), pady=(16, 8))
+        main.grid_columnconfigure(0, weight=1)
+        main.grid_rowconfigure(3, weight=1)
+        self.main = main
 
-        left_top = ctk.CTkFrame(topf, fg_color="transparent")
-        left_top.pack(side="left")
-        ctk.CTkLabel(left_top, text=APP_TITLE,
-                     font=ctk.CTkFont(family="Microsoft YaHei UI", size=20, weight="bold"),
-                     text_color=C_TITLE).pack(side="left", padx=(0, 12))
+        self.header_card = self._panel(main, fg_color=PALETTE["surface"], radius=28)
+        self.header_card.grid(row=0, column=0, sticky="ew", pady=(0, 12))
 
-        self.hospital_badge = ctk.CTkLabel(left_top, text="",
-                                           font=ctk.CTkFont(family="Microsoft YaHei UI", size=11, weight="bold"),
-                                           corner_radius=20, padx=14, pady=5)
-        self.hospital_badge.pack(side="left")
+        header_inner = ctk.CTkFrame(self.header_card, fg_color="transparent")
+        header_inner.pack(fill="x", padx=22, pady=18)
+        header_inner.grid_columnconfigure(0, weight=1)
+        header_inner.grid_columnconfigure(1, weight=0)
 
-        right_top = ctk.CTkFrame(topf, fg_color="transparent")
-        right_top.pack(side="right")
-        self.status_dot = ctk.CTkLabel(right_top, text="●",
-                                       font=ctk.CTkFont(family="Microsoft YaHei UI", size=12),
-                                       text_color="#aeaeb2")
-        self.status_dot.pack(side="left", padx=(0, 4))
-        self.status_text = ctk.CTkLabel(right_top, text="待启动",
-                                        font=ctk.CTkFont(family="Microsoft YaHei UI", size=12), text_color=C_SUBTLE)
+        headline = ctk.CTkFrame(header_inner, fg_color="transparent")
+        headline.grid(row=0, column=0, sticky="w")
+
+        self.header_title = ctk.CTkLabel(
+            headline,
+            text="文案生成器运行总览",
+            font=ctk.CTkFont(family="Segoe UI Semibold", size=23, weight="bold"),
+            text_color=PALETTE["text"],
+        )
+        self.header_title.pack(anchor="w")
+
+        self.header_desc = ctk.CTkLabel(
+            headline,
+            text="聚焦多平台适配、过审稳定性、真人表达质感、重复内容规避与交付过程可视化。",
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=12),
+            text_color=PALETTE["muted"],
+        )
+        self.header_desc.pack(anchor="w", pady=(5, 0))
+
+        header_right = ctk.CTkFrame(header_inner, fg_color="transparent")
+        header_right.grid(row=0, column=1, sticky="e")
+
+        self.hospital_badge = ctk.CTkLabel(
+            header_right,
+            text="",
+            corner_radius=999,
+            padx=18,
+            pady=8,
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=12, weight="bold"),
+        )
+        self.hospital_badge.pack(anchor="e", pady=(0, 10))
+
+        status_row = ctk.CTkFrame(header_right, fg_color="transparent")
+        status_row.pack(anchor="e")
+        self.status_dot = ctk.CTkLabel(
+            status_row,
+            text="●",
+            font=ctk.CTkFont(family="Segoe UI Symbol", size=15),
+            text_color=PALETTE["soft"],
+        )
+        self.status_dot.pack(side="left", padx=(0, 6))
+        self.status_text = ctk.CTkLabel(
+            status_row,
+            text="等待启动",
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=12, weight="bold"),
+            text_color=PALETTE["muted"],
+        )
         self.status_text.pack(side="left")
 
-        # Tabs
-        self.tabs = ctk.CTkTabview(right, corner_radius=14,
-                                   fg_color=C_CARD, border_width=1, border_color=C_CARD_BD,
-                                   segmented_button_fg_color=C_BG2,
-                                   segmented_button_selected_color=self._cfg()["accent"],
-                                   segmented_button_unselected_color=C_BG2,
-                                   segmented_button_selected_hover_color=self._cfg()["hover"])
-        self.tabs.grid(row=1, column=0, sticky="nsew")
-        self.tabs.add("步骤日志")
-        self.tabs.add("生成内容")
-        self.tabs.set("步骤日志")
+        metric_row = ctk.CTkFrame(main, fg_color="transparent")
+        metric_row.grid(row=1, column=0, sticky="ew", pady=(0, 12))
+        for i in range(4):
+            metric_row.grid_columnconfigure(i, weight=1, uniform="metric")
+        self.metric_cards = {}
+        metric_defs = [
+            ("saved", "已保存"),
+            ("progress", "完成进度"),
+            ("errors", "异常记录"),
+            ("runtime", "运行用时"),
+        ]
+        for idx, (key, title) in enumerate(metric_defs):
+            card = self._panel(metric_row, fg_color=PALETTE["surface"], radius=22)
+            card.grid(row=0, column=idx, sticky="ew", padx=(0 if idx == 0 else 6, 0 if idx == 3 else 6))
+            inner = ctk.CTkFrame(card, fg_color="transparent")
+            inner.pack(fill="both", expand=True, padx=16, pady=14)
+            ctk.CTkLabel(
+                inner,
+                text=title,
+                font=ctk.CTkFont(family="Microsoft YaHei UI", size=11, weight="bold"),
+                text_color=PALETTE["muted"],
+            ).pack(anchor="w")
+            value = ctk.CTkLabel(
+                inner,
+                text="0",
+                font=ctk.CTkFont(family="Segoe UI Semibold", size=22, weight="bold"),
+                text_color=PALETTE["text"],
+            )
+            value.pack(anchor="w", pady=(8, 2))
+            hint = ctk.CTkLabel(
+                inner,
+                text="",
+                font=ctk.CTkFont(family="Microsoft YaHei UI", size=11),
+                text_color=PALETTE["soft"],
+            )
+            hint.pack(anchor="w")
+            self.metric_cards[key] = {"value": value, "hint": hint}
 
-        # Tab 1: Steps
-        t1 = self.tabs.tab("步骤日志")
-        t1.grid_columnconfigure(0, weight=1)
-        t1.grid_rowconfigure(0, weight=1)
+        self.stage_card = self._panel(main, fg_color=PALETTE["surface"], radius=24)
+        self.stage_card.grid(row=2, column=0, sticky="ew", pady=(0, 12))
+        stage_inner = ctk.CTkFrame(self.stage_card, fg_color="transparent")
+        stage_inner.pack(fill="x", padx=22, pady=18)
+
+        stage_top = ctk.CTkFrame(stage_inner, fg_color="transparent")
+        stage_top.pack(fill="x")
+        self._section_label(stage_top, "当前阶段").pack(side="left")
+        self.stage_label = ctk.CTkLabel(
+            stage_top,
+            text="准备就绪",
+            font=ctk.CTkFont(family="Segoe UI Semibold", size=16, weight="bold"),
+            text_color=PALETTE["text"],
+        )
+        self.stage_label.pack(side="right")
+
+        self.stage_canvas = tk.Canvas(
+            stage_inner,
+            height=76,
+            bd=0,
+            highlightthickness=0,
+            bg=PALETTE["surface"],
+        )
+        self.stage_canvas.pack(fill="x", pady=(10, 8))
+
+        self.progress_bar = ctk.CTkProgressBar(
+            stage_inner,
+            height=10,
+            corner_radius=999,
+            fg_color=PALETTE["surface_alt"],
+        )
+        self.progress_bar.pack(fill="x")
+        self.progress_bar.set(0)
+
+        progress_meta = ctk.CTkFrame(stage_inner, fg_color="transparent")
+        progress_meta.pack(fill="x", pady=(10, 0))
+        self.stats_label = ctk.CTkLabel(
+            progress_meta,
+            text="已保存 0 篇 · 错误 0 条",
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=12),
+            text_color=PALETTE["muted"],
+        )
+        self.stats_label.pack(side="left")
+        self.progress_pct = ctk.CTkLabel(
+            progress_meta,
+            text="0%",
+            font=ctk.CTkFont(family="Segoe UI Semibold", size=22, weight="bold"),
+            text_color=PALETTE["text"],
+        )
+        self.progress_pct.pack(side="right")
+
+        self.speed_label = ctk.CTkLabel(
+            stage_inner,
+            text="",
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=11),
+            text_color=PALETTE["soft"],
+        )
+        self.speed_label.pack(anchor="w", pady=(6, 0))
+
+        self.log_card = self._panel(main, fg_color=PALETTE["surface"], radius=24)
+        self.log_card.grid(row=3, column=0, sticky="nsew")
+        self.log_card.grid_columnconfigure(0, weight=1)
+        self.log_card.grid_rowconfigure(1, weight=1)
+
+        log_head = ctk.CTkFrame(self.log_card, fg_color="transparent")
+        log_head.grid(row=0, column=0, sticky="ew", padx=22, pady=(18, 10))
+        log_head.grid_columnconfigure(0, weight=1)
+
+        title_wrap = ctk.CTkFrame(log_head, fg_color="transparent")
+        title_wrap.grid(row=0, column=0, sticky="w")
+        self._section_label(title_wrap, "运行日志").pack(anchor="w")
+        self.log_desc = ctk.CTkLabel(
+            title_wrap,
+            text="采用简洁事件流展示方式，只保留关键阶段、保存进度与异常提醒，减少工程感。",
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=11),
+            text_color=PALETTE["soft"],
+        )
+        self.log_desc.pack(anchor="w", pady=(4, 0))
+
+        self.summary_pill = ctk.CTkLabel(
+            log_head,
+            text="准备就绪",
+            corner_radius=999,
+            padx=14,
+            pady=6,
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=11, weight="bold"),
+            fg_color=PALETTE["surface_alt"],
+            text_color=PALETTE["muted"],
+        )
+        self.summary_pill.grid(row=0, column=1, sticky="e")
+
+        log_body = ctk.CTkFrame(self.log_card, fg_color="transparent")
+        log_body.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 16))
+        log_body.grid_columnconfigure(0, weight=1)
+        log_body.grid_rowconfigure(0, weight=1)
+
         self.console = tk.Text(
-            t1, bd=0, font=("Consolas", 10), wrap="word", padx=16, pady=12,
-            bg=C_CONS_BG, fg=C_CONS_FG, insertbackground=C_CONS_FG,
-            relief="flat", highlightthickness=0, selectbackground="#dcdce0")
-        self.console.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+            log_body,
+            bd=0,
+            wrap="word",
+            padx=18,
+            pady=16,
+            relief="flat",
+            highlightthickness=0,
+            bg=PALETTE["log_bg"],
+            fg=PALETTE["log_text"],
+            insertbackground=PALETTE["log_text"],
+            selectbackground="#E7DDD0",
+            font=("Microsoft YaHei UI", 10),
+        )
+        self.console.grid(row=0, column=0, sticky="nsew")
         self.console.configure(state="disabled")
-        self.console.tag_configure("muted", foreground="#8e8e93")
-        self.console.tag_configure("good", foreground=C_GOOD)
-        self.console.tag_configure("warn", foreground=C_WARN)
-        self.console.tag_configure("bad", foreground=C_BAD)
-        self.console.tag_configure("accent", foreground=self._cfg()["accent"])
-        self._append_line(" 欢迎使用 X 启动台 · 选择医院 · 设置篇数 · 选模式 · 点击开始生成", "muted")
+        self.console.tag_configure("muted", foreground=PALETTE["soft"], spacing1=4, spacing3=6)
+        self.console.tag_configure("good", foreground=PALETTE["success"], spacing1=4, spacing3=6)
+        self.console.tag_configure("warn", foreground=PALETTE["warning"], spacing1=4, spacing3=6)
+        self.console.tag_configure("bad", foreground=PALETTE["danger"], spacing1=4, spacing3=6)
+        self.console.tag_configure("accent", foreground=self._cfg()["accent"], spacing1=4, spacing3=6)
+        self._append_line("欢迎使用 X Launcher。选择医院、设置篇数与平台后即可开始生成。", "muted")
 
-        # Tab 2: Content
-        t2 = self.tabs.tab("生成内容")
-        t2.grid_columnconfigure(0, weight=1)
-        t2.grid_rowconfigure(0, weight=1)
-        self.stream_text = tk.Text(
-            t2, bd=0, font=("Microsoft YaHei UI", 11), wrap="word", padx=16, pady=12,
-            bg=C_CONS_BG, fg=C_CONS_FG, insertbackground=C_CONS_FG,
-            relief="flat", highlightthickness=0, selectbackground="#dcdce0")
-        self.stream_text.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-        self.stream_text.configure(state="disabled")
-        self.stream_text.tag_configure("title", font=("Microsoft YaHei UI", 12, "bold"),
-                                       foreground=C_TITLE, spacing1=8, spacing3=4)
-        self.stream_text.tag_configure("body", font=("Microsoft YaHei UI", 10),
-                                       foreground="#4a4a4e", lmargin1=16, lmargin2=16, spacing1=2)
-        self.stream_text.tag_configure("sep", foreground="#dcdce0",
-                                       font=("Microsoft YaHei UI", 2), spacing1=4)
-
-    def _build_statusbar(self):
-        bar = ctk.CTkFrame(self.root, height=36, fg_color="transparent")
-        bar.grid(row=1, column=0, columnspan=2, sticky="ew", padx=28, pady=(0, 8))
-        self.meta_label = ctk.CTkLabel(bar, text="准备就绪 · 请先选择医院",
-                                       font=ctk.CTkFont(family="Microsoft YaHei UI", size=11), text_color=C_HINT)
+    def _build_footer(self):
+        footer = ctk.CTkFrame(self.root, fg_color="transparent")
+        footer.grid(row=1, column=0, columnspan=2, sticky="ew", padx=24, pady=(0, 10))
+        self.meta_label = ctk.CTkLabel(
+            footer,
+            text="准备就绪 · 请先选择医院",
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=11),
+            text_color=PALETTE["muted"],
+        )
         self.meta_label.pack(side="left")
-        self.toast_label = ctk.CTkLabel(bar, text="",
-                                        font=ctk.CTkFont(family="Microsoft YaHei UI", size=11, weight="bold"),
-                                        corner_radius=8, padx=12, pady=4)
-        self.toast_label.pack(side="right")
 
-    # ═══════════════ THEME ═══════════════
+        self.toast_label = ctk.CTkLabel(
+            footer,
+            text="",
+            corner_radius=999,
+            padx=14,
+            pady=6,
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=11, weight="bold"),
+        )
+        self.toast_label.pack(side="right")
 
     def _apply_theme(self):
         cfg = self._cfg()
-        acc, hov, soft, mid = cfg["accent"], cfg["hover"], cfg["accent_soft"], cfg["accent_mid"]
+        acc = cfg["accent"]
+        deep = cfg["accent_deep"]
+        soft = cfg["accent_soft"]
+        line = cfg["accent_line"]
 
-        self.hospital_badge.configure(text=cfg["label"], fg_color=soft, text_color=acc)
+        self.brand_mark.configure(fg_color=acc)
+        self.hospital_badge.configure(text=cfg["label"], fg_color=soft, text_color=deep)
+        self.progress_bar.configure(progress_color=acc)
+        self.progress_pct.configure(text_color=deep)
+        self.stage_label.configure(text_color=deep)
+        self.summary_pill.configure(fg_color=soft, text_color=deep)
+        self.console.tag_configure("accent", foreground=acc)
+
+        selected_cfg = {
+            "fg_color": soft,
+            "hover_color": line,
+            "text_color": deep,
+            "border_width": 1,
+            "border_color": line,
+        }
+        idle_cfg = {
+            "fg_color": "#1C3D5A",
+            "hover_color": "#244864",
+            "text_color": "#E5E7EB",
+            "border_width": 1,
+            "border_color": "#36566F",
+        }
 
         if self.current_hospital == "yiwu_yicheng":
-            self.btn_yicheng.configure(fg_color=soft, hover_color=mid, text_color=acc,
-                                       font=ctk.CTkFont(family="Microsoft YaHei UI", size=13, weight="bold"))
-            self.btn_weichuang.configure(fg_color=C_CARD, hover_color=C_BG2, text_color=C_HINT,
-                                         font=ctk.CTkFont(family="Microsoft YaHei UI", size=13))
+            self.btn_yicheng.configure(**selected_cfg)
+            self.btn_weichuang.configure(**idle_cfg)
         else:
-            self.btn_weichuang.configure(fg_color=soft, hover_color=mid, text_color=acc,
-                                         font=ctk.CTkFont(family="Microsoft YaHei UI", size=13, weight="bold"))
-            self.btn_yicheng.configure(fg_color=C_CARD, hover_color=C_BG2, text_color=C_HINT,
-                                       font=ctk.CTkFont(family="Microsoft YaHei UI", size=13))
+            self.btn_weichuang.configure(**selected_cfg)
+            self.btn_yicheng.configure(**idle_cfg)
 
-        self.progress_bar.configure(progress_color=acc)
-        self.progress_pct.configure(text_color=acc)
-        self.btn_start.configure(fg_color=acc, hover_color=hov, text_color="#ffffff")
-        self.btn_continue.configure(fg_color=acc, hover_color=hov, text_color="#ffffff")
-
-        self.tabs.configure(segmented_button_selected_color=acc,
-                            segmented_button_selected_hover_color=hov)
-
-        # Mode buttons
-        for k, btn in self._mode_btns.items():
-            if k == self._selected_mode:
-                btn.configure(fg_color=soft, hover_color=mid, text_color=acc,
-                              font=ctk.CTkFont(family="Microsoft YaHei UI", size=11, weight="bold"))
+        for key, btn in self._mode_btns.items():
+            if key == self._selected_mode:
+                btn.configure(
+                    fg_color=soft,
+                    hover_color=line,
+                    text_color=deep,
+                    border_width=1,
+                    border_color=line,
+                )
             else:
-                btn.configure(fg_color=C_BG2, hover_color=mid, text_color=C_TITLE,
-                              font=ctk.CTkFont(family="Microsoft YaHei UI", size=11))
+                btn.configure(
+                    fg_color="#1C3D5A",
+                    hover_color="#244864",
+                    text_color="#E5E7EB",
+                    border_width=1,
+                    border_color="#36566F",
+                )
 
-        for btn in [self.btn_review, self.btn_output, self.btn_latest, self.btn_logs]:
-            btn.configure(fg_color=C_BG2, hover_color=mid, text_color=C_TITLE)
+        self.btn_start.configure(fg_color=acc, hover_color=deep, text_color="#FFFFFF")
+        self.btn_continue.configure(fg_color=acc, hover_color=deep, text_color="#FFFFFF")
+        self.btn_stop.configure(
+            fg_color="#FFF1F2",
+            hover_color="#FFE4E6",
+            text_color=PALETTE["danger"],
+            border_width=1,
+            border_color="#FECDD3",
+        )
 
-        self.console.tag_configure("accent", foreground=acc)
+        quiet_buttons = [
+            self.btn_review,
+            self.btn_output,
+            self.btn_latest,
+            self.btn_txt_dir,
+            self.btn_txt_file,
+            self.btn_logs,
+        ]
+        for btn in quiet_buttons:
+            btn.configure(
+                fg_color=soft,
+                hover_color=line,
+                text_color=deep,
+                border_width=1,
+                border_color=line,
+            )
 
         batch = self._read_config_int("BATCH_SIZE", 12)
         workers = self._read_config_int("CONCURRENT_WORKERS", 3)
-        self.cfg_label.configure(text=f"{batch} 篇 / {workers} 并发")
-
-    # ═══════════════ LOGIC ═══════════════
+        self.cfg_label.configure(text=f"默认批量 {batch} 篇 · 并发 {workers}")
+        self._draw_stage_bar()
+        self._refresh_metric_cards()
 
     def _set_mode(self, mode: str):
         self._selected_mode = mode
@@ -450,27 +770,33 @@ class LauncherApp:
 
     def switch_hospital(self, key: str):
         if self.process and self.process.poll() is None:
-            self._show_toast("任务运行中，请先停止")
+            self._show_toast("任务运行中，请先停止当前任务")
             return
         self.current_hospital = key
-        self._apply_theme()
-        self.stage_canvas.delete("all")
-        self.stage_label.configure(text="准备就绪")
+        self.current_stage = "准备就绪"
         self.stage_index = -1
-        self._append_line(f"已切换到 {HOSPITALS[key]['label']}", "accent")
+        self.visual_progress = 0.0
+        self.stage_label.configure(text=self.current_stage)
+        self.status_text.configure(text="等待启动")
+        self.status_dot.configure(text_color=PALETTE["soft"])
         self.meta_label.configure(text=f"{HOSPITALS[key]['label']} · 准备就绪")
+        self.summary_pill.configure(text="已切换医院")
+        self._append_line(f"已切换到 {HOSPITALS[key]['label']}", "accent")
+        self._apply_theme()
 
     def _append_line(self, text: str, tag: str = ""):
+        prefixes = {
+            "good": "● ",
+            "warn": "◐ ",
+            "bad": "■ ",
+            "accent": "◆ ",
+            "muted": "· ",
+        }
+        text = f"{prefixes.get(tag, '· ')}{text}"
         self.console.configure(state="normal")
         self.console.insert("end", text + "\n", tag)
         self.console.see("end")
         self.console.configure(state="disabled")
-
-    def _append_stream(self, text: str, tag: str = ""):
-        self.stream_text.configure(state="normal")
-        self.stream_text.insert("end", text, tag)
-        self.stream_text.see("end")
-        self.stream_text.configure(state="disabled")
 
     def _open_path(self, path: str):
         os.makedirs(path, exist_ok=True)
@@ -479,16 +805,53 @@ class LauncherApp:
     def open_latest_output_folder(self):
         output_root = self._output_dir()
         os.makedirs(output_root, exist_ok=True)
-        subdirs = [os.path.join(output_root, name) for name in os.listdir(output_root)
-                   if os.path.isdir(os.path.join(output_root, name))]
+        subdirs = [
+            os.path.join(output_root, name)
+            for name in os.listdir(output_root)
+            if os.path.isdir(os.path.join(output_root, name))
+        ]
         os.startfile(max(subdirs, key=os.path.getmtime) if subdirs else output_root)
+
+    def _find_latest_txt_file(self):
+        output_root = self._output_dir()
+        if not os.path.exists(output_root):
+            return None
+        latest_file = None
+        latest_mtime = -1.0
+        for root, _, files in os.walk(output_root):
+            for name in files:
+                if not name.lower().endswith(".txt"):
+                    continue
+                path = os.path.join(root, name)
+                try:
+                    mtime = os.path.getmtime(path)
+                except OSError:
+                    continue
+                if mtime > latest_mtime:
+                    latest_mtime = mtime
+                    latest_file = path
+        return latest_file
+
+    def open_latest_txt_folder(self):
+        latest_file = self._find_latest_txt_file()
+        if latest_file:
+            os.startfile(os.path.dirname(latest_file))
+            return
+        self._show_toast("暂未找到生成的 TXT 文件")
+
+    def open_latest_txt_file(self):
+        latest_file = self._find_latest_txt_file()
+        if latest_file:
+            os.startfile(latest_file)
+            return
+        self._show_toast("暂未找到生成的 TXT 文件")
 
     def _show_toast(self, text: str):
         if self._toast_after_id:
             self.root.after_cancel(self._toast_after_id)
         cfg = self._cfg()
-        self.toast_label.configure(text=text, fg_color=cfg["accent_soft"], text_color=cfg["accent"])
-        self._toast_after_id = self.root.after(2600, lambda: self.toast_label.configure(text=""))
+        self.toast_label.configure(text=text, fg_color=cfg["accent_soft"], text_color=cfg["accent_deep"])
+        self._toast_after_id = self.root.after(2600, lambda: self.toast_label.configure(text="", fg_color="transparent"))
 
     def _get_count(self) -> int:
         try:
@@ -498,44 +861,111 @@ class LauncherApp:
 
     def _draw_stage_bar(self):
         self.stage_canvas.delete("all")
-        acc = self._cfg()["accent"]
-        mid = self._cfg()["accent_mid"]
-        w = max(self.stage_canvas.winfo_width(), 280)
-        n = len(STAGE_STEPS)
-        gap = w / n
-        for i, label in enumerate(STAGE_STEPS):
-            cx = gap * i + gap / 2
-            cy = 24
-            if i < n - 1:
-                self.stage_canvas.create_line(cx + 13, cy, gap * (i + 1) + gap / 2 - 13, cy,
-                                              fill=acc if i < self.stage_index else C_CARD_BD, width=3)
-            if i <= self.stage_index:
-                fill, r, fw, nc, lc = acc, 13, "bold", "#ffffff", acc
-            else:
-                fill, r, fw, nc, lc = C_BG2, 11, "normal", C_HINT, C_HINT
-            self.stage_canvas.create_oval(cx - r, cy - r, cx + r, cy + r,
-                                          fill=fill, outline=mid if i <= self.stage_index else C_CARD_BD, width=2)
-            self.stage_canvas.create_text(cx, cy, text=str(i + 1), fill=nc,
-                                          font=("Microsoft YaHei UI", 9, fw))
-            self.stage_canvas.create_text(cx, cy + 24, text=label, fill=lc,
-                                          font=("Microsoft YaHei UI", 9, fw))
+        cfg = self._cfg()
+        accent = cfg["accent"]
+        accent_line = cfg["accent_line"]
+        w = max(self.stage_canvas.winfo_width(), 540)
+        h = 76
+        pad_x = 24
+        usable = w - pad_x * 2
+        steps = len(STAGE_STEPS)
+        gap = usable / max(steps - 1, 1)
+        cy = 24
+        self.stage_canvas.configure(bg=PALETTE["surface"])
+
+        for idx, label in enumerate(STAGE_STEPS):
+            cx = pad_x + idx * gap
+            if idx < steps - 1:
+                nx = pad_x + (idx + 1) * gap
+                line_color = accent if idx < self.stage_index else PALETTE["border"]
+                self.stage_canvas.create_line(cx + 18, cy, nx - 18, cy, fill=line_color, width=4, capstyle=tk.ROUND)
+
+            active = idx <= self.stage_index
+            fill = accent if active else PALETTE["surface_alt"]
+            outline = accent_line if active else PALETTE["border"]
+            text_color = "#FFFFFF" if active else PALETTE["muted"]
+            label_color = accent if active else PALETTE["muted"]
+            radius = 16 if active else 14
+
+            self.stage_canvas.create_oval(
+                cx - radius,
+                cy - radius,
+                cx + radius,
+                cy + radius,
+                fill=fill,
+                outline=outline,
+                width=2,
+            )
+            self.stage_canvas.create_text(
+                cx,
+                cy,
+                text=str(idx + 1),
+                fill=text_color,
+                font=("Segoe UI Semibold", 10),
+            )
+            self.stage_canvas.create_text(
+                cx,
+                h - 16,
+                text=label,
+                fill=label_color,
+                font=("Microsoft YaHei UI", 10, "bold" if active else "normal"),
+            )
 
     def _set_stage_by_line(self, stripped: str):
-        prev = self.stage_index
+        previous = self.stage_index
         for idx, kw in enumerate(["长尾", "初稿", "去AI", "评分", "保存"]):
             if kw in stripped:
                 self.stage_index = idx
                 self.current_stage = STAGE_STEPS[idx]
                 break
-        if self.stage_index != prev:
+        if self.stage_index != previous:
+            self.stage_started_at = datetime.now()
             self.stage_label.configure(text=self.current_stage)
+            self.summary_pill.configure(text=self.current_stage)
 
-    # ═══════════════ PROCESS ═══════════════
+    def _format_runtime(self) -> str:
+        if not self.start_time:
+            return "00:00"
+        sec = int((datetime.now() - self.start_time).total_seconds())
+        return f"{sec // 60:02d}:{sec % 60:02d}"
+
+    def _predict_stage_progress(self) -> float:
+        if self.process_mode != "main" or not self.start_time:
+            return 0.0
+        if self.stage_index < 0:
+            return 0.0
+
+        scale = max(self.progress_target, 1) / 12
+        current_span_end = STAGE_MILESTONES[min(self.stage_index, len(STAGE_MILESTONES) - 1)]
+        current_span_start = 0.02 if self.stage_index == 0 else STAGE_MILESTONES[self.stage_index - 1]
+        if self.stage_index >= len(STAGE_MILESTONES) - 1:
+            return current_span_end
+
+        started_at = self.stage_started_at or self.start_time
+        elapsed = max((datetime.now() - started_at).total_seconds(), 0.0)
+        estimated = max(BASE_STAGE_SECONDS[self.stage_index] * scale, 4.0)
+        ratio = min(elapsed / estimated, 0.98)
+        return current_span_start + (current_span_end - current_span_start) * ratio
+
+    def _refresh_metric_cards(self):
+        progress_pct = round(self.visual_progress * 100) if self.progress_target else 0
+        self.metric_cards["saved"]["value"].configure(text=str(self.saved_count))
+        self.metric_cards["saved"]["hint"].configure(text="本轮写入成功的文件数")
+
+        self.metric_cards["progress"]["value"].configure(text=f"{progress_pct}%")
+        self.metric_cards["progress"]["hint"].configure(text=f"目标 {self.progress_target} 篇")
+
+        self.metric_cards["errors"]["value"].configure(text=str(self.error_count))
+        self.metric_cards["errors"]["hint"].configure(text="运行日志中的异常计数")
+
+        self.metric_cards["runtime"]["value"].configure(text=self._format_runtime())
+        self.metric_cards["runtime"]["hint"].configure(text=self.current_run_label if self.process_mode else "等待新的任务")
 
     def start_process(self, mode: str):
         if self.process and self.process.poll() is None:
-            self._show_toast("已有任务在运行")
+            self._show_toast("已有任务正在运行")
             return
+
         script_map = {"main": self._main_py(), "review": self._review_py()}
         script = script_map.get(mode)
         if not script or not os.path.exists(script):
@@ -550,35 +980,43 @@ class LauncherApp:
             platform_only = ""
 
         self.process_mode = mode
-        self.current_run_label = f"单平台 · {PLATFORMS.get(platform_only, platform_only)}" if platform_only else f"全平台 · {count} 篇"
-        self.saved_count = self.error_count = 0
+        self.current_run_label = (
+            f"单平台 · {PLATFORMS.get(platform_only, platform_only)}"
+            if platform_only else
+            f"全平台 · {count} 篇"
+        )
+        self.saved_count = 0
+        self.error_count = 0
         self.progress_target = count if mode == "main" else 0
         self._remain_target = 0
         self.run_output_baseline_ts = datetime.now().timestamp()
         self.start_time = datetime.now()
-        self.progress_bar.set(0)
-        self.progress_pct.configure(text="0%")
-        self.speed_label.configure(text="")
+        self.stage_started_at = self.start_time
         self.current_stage = "长尾扩展"
         self.stage_index = 0
+
+        self.visual_progress = 0.02
+        self.progress_bar.set(self.visual_progress)
+        self.progress_pct.configure(text="0%")
+        self.speed_label.configure(text="")
         self.stage_label.configure(text=self.current_stage)
-        self.stats_label.configure(text="已保存 0 篇 · 错误 0 条")
         self.status_text.configure(text="启动中")
         self.status_dot.configure(text_color=self._cfg()["accent"])
-        self.meta_label.configure(text=f"进程启动中…（{self.current_run_label}）")
+        self.summary_pill.configure(text="任务启动中")
+        self.meta_label.configure(text=f"进程启动中 · {self.current_run_label}")
+        self.stats_label.configure(text="已保存 0 篇 · 错误 0 条")
         self.btn_continue.pack_forget()
+        self._refresh_metric_cards()
 
         self.console.configure(state="normal")
         self.console.delete("1.0", "end")
         self.console.configure(state="disabled")
-        self.stream_text.configure(state="normal")
-        self.stream_text.delete("1.0", "end")
-        self.stream_text.configure(state="disabled")
-
-        self._append_line("─" * 60, "muted")
+        self._append_line("------------------------------------------------------------", "muted")
         self._append_line(
             f"[{self.start_time.strftime('%H:%M:%S')}] 启动 {self._cfg()['label']} · "
-            f"{'审阅台' if mode == 'review' else self.current_run_label}", "accent")
+            f"{'审阅台' if mode == 'review' else self.current_run_label}",
+            "accent",
+        )
 
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         env = os.environ.copy()
@@ -587,14 +1025,12 @@ class LauncherApp:
 
         is_frozen = getattr(sys, "frozen", False)
         if is_frozen:
-            # Bundled EXE: launch self in worker mode
             launch_cmd = [sys.executable, "--worker", "--project", self.current_hospital]
             if mode == "main":
                 if platform_only:
                     launch_cmd += ["--platform", platform_only]
                 launch_cmd += ["--count", str(count)]
         else:
-            # Dev mode: use Python interpreter
             pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
             python_exec = pythonw if mode == "review" and os.path.exists(pythonw) else sys.executable
             launch_cmd = [python_exec, script]
@@ -605,19 +1041,28 @@ class LauncherApp:
 
         try:
             self.process = subprocess.Popen(
-                launch_cmd, cwd=self._project_dir(),
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                universal_newlines=True, encoding="utf-8", errors="replace", bufsize=1,
-                creationflags=creationflags, env=env)
+                launch_cmd,
+                cwd=self._project_dir(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
+                creationflags=creationflags,
+                env=env,
+            )
         except Exception as exc:
-            self._append_line(f"[{datetime.now().strftime('%H:%M:%S')}] 启动失败：{exc}", "bad")
-            self._show_toast(f"启动失败：{exc}")
+            self._append_line(f"[{datetime.now().strftime('%H:%M:%S')}] 启动失败: {exc}", "bad")
+            self._show_toast(f"启动失败: {exc}")
             self.process = None
             self.process_mode = None
             self.status_text.configure(text="启动失败")
-            self.status_dot.configure(text_color=C_BAD)
+            self.status_dot.configure(text_color=PALETTE["danger"])
             self.meta_label.configure(text="进程启动失败")
+            self.summary_pill.configure(text="启动失败")
             return
+
         self.reader_thread = threading.Thread(target=self._read_output, daemon=True)
         self.reader_thread.start()
         self.root.after(260, self._tick_runtime)
@@ -628,9 +1073,10 @@ class LauncherApp:
         self._remain_target = self.progress_target - self.saved_count
         try:
             self.process.terminate()
-            self._append_line("已发送停止指令 — 可点击「继续生成」补完剩余", "warn")
+            self._append_line("已发送停止指令，可在稍后继续生成剩余篇数。", "warn")
+            self.summary_pill.configure(text="正在停止")
         except Exception as exc:
-            self._append_line(f"停止失败：{exc}", "bad")
+            self._append_line(f"停止失败: {exc}", "bad")
 
     def _continue_process(self):
         if self.process and self.process.poll() is None:
@@ -638,6 +1084,7 @@ class LauncherApp:
         if self._remain_target <= 0:
             self._show_toast("没有剩余篇数需要生成")
             return
+
         script = self._main_py()
         if not os.path.exists(script):
             self._show_toast("未找到脚本文件")
@@ -645,31 +1092,32 @@ class LauncherApp:
 
         count = self._remain_target
         self.process_mode = "main"
-        self.current_run_label = f"继续 · {count} 篇"
-        self.saved_count = self.error_count = 0
+        self.current_run_label = f"继续生成 · {count} 篇"
+        self.saved_count = 0
+        self.error_count = 0
         self.progress_target = count
         self._remain_target = 0
         self.run_output_baseline_ts = datetime.now().timestamp()
         self.start_time = datetime.now()
-        self.progress_bar.set(0)
-        self.progress_pct.configure(text="0%")
-        self.speed_label.configure(text="")
+        self.stage_started_at = self.start_time
         self.current_stage = "长尾扩展"
         self.stage_index = 0
+        self.visual_progress = 0.02
+        self.progress_bar.set(self.visual_progress)
+        self.progress_pct.configure(text="0%")
+        self.speed_label.configure(text="")
         self.stage_label.configure(text=self.current_stage)
-        self.stats_label.configure(text="已保存 0 篇 · 错误 0 条")
         self.status_text.configure(text="启动中")
         self.status_dot.configure(text_color=self._cfg()["accent"])
-        self.meta_label.configure(text=f"继续生成剩余 {count} 篇…")
+        self.summary_pill.configure(text="继续任务")
+        self.meta_label.configure(text=f"继续生成剩余 {count} 篇")
+        self.stats_label.configure(text="已保存 0 篇 · 错误 0 条")
         self.btn_continue.pack_forget()
+        self._refresh_metric_cards()
 
         self.console.configure(state="normal")
         self.console.delete("1.0", "end")
         self.console.configure(state="disabled")
-        self.stream_text.configure(state="normal")
-        self.stream_text.delete("1.0", "end")
-        self.stream_text.configure(state="disabled")
-
         self._append_line(f"[{datetime.now().strftime('%H:%M:%S')}] 继续生成 · {count} 篇", "accent")
 
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -692,19 +1140,28 @@ class LauncherApp:
 
         try:
             self.process = subprocess.Popen(
-                launch_cmd, cwd=self._project_dir(),
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                universal_newlines=True, encoding="utf-8", errors="replace", bufsize=1,
-                creationflags=creationflags, env=env)
+                launch_cmd,
+                cwd=self._project_dir(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
+                creationflags=creationflags,
+                env=env,
+            )
         except Exception as exc:
-            self._append_line(f"[{datetime.now().strftime('%H:%M:%S')}] 继续启动失败：{exc}", "bad")
-            self._show_toast(f"启动失败：{exc}")
+            self._append_line(f"[{datetime.now().strftime('%H:%M:%S')}] 继续启动失败: {exc}", "bad")
+            self._show_toast(f"启动失败: {exc}")
             self.process = None
             self.process_mode = None
             self.status_text.configure(text="启动失败")
-            self.status_dot.configure(text_color=C_BAD)
+            self.status_dot.configure(text_color=PALETTE["danger"])
             self.meta_label.configure(text="进程启动失败")
+            self.summary_pill.configure(text="启动失败")
             return
+
         self.reader_thread = threading.Thread(target=self._read_output, daemon=True)
         self.reader_thread.start()
         self.root.after(260, self._tick_runtime)
@@ -724,97 +1181,122 @@ class LauncherApp:
         if not os.path.exists(output_root):
             return 0
         latest_dir = output_root
-        subdirs = [os.path.join(output_root, name) for name in os.listdir(output_root)
-                   if os.path.isdir(os.path.join(output_root, name))]
+        subdirs = [
+            os.path.join(output_root, name)
+            for name in os.listdir(output_root)
+            if os.path.isdir(os.path.join(output_root, name))
+        ]
         if subdirs:
             latest_dir = max(subdirs, key=os.path.getmtime)
-        return sum(1 for name in os.listdir(latest_dir)
-                   if name.lower().endswith('.txt')
-                   and os.path.isfile(os.path.join(latest_dir, name))
-                   and os.path.getmtime(os.path.join(latest_dir, name)) >= self.run_output_baseline_ts)
+        return sum(
+            1
+            for name in os.listdir(latest_dir)
+            if name.lower().endswith(".txt")
+            and os.path.isfile(os.path.join(latest_dir, name))
+            and os.path.getmtime(os.path.join(latest_dir, name)) >= self.run_output_baseline_ts
+        )
 
     def _animate_progress(self):
         if self.process_mode == "main" and self.process and self.process.poll() is None:
+            predicted = self._predict_stage_progress()
+            actual_ratio = self.saved_count / max(self.progress_target, 1) if self.progress_target else 0.0
+            target_progress = max(predicted, actual_ratio, self.visual_progress)
+            if self.saved_count >= self.progress_target > 0:
+                target_progress = max(target_progress, 0.985)
+
             actual = self._count_generated_files()
             if actual > self.saved_count:
                 self.saved_count = actual
-                pct = self.saved_count / max(self.progress_target, 1)
-                self.progress_bar.set(pct)
-                self.progress_pct.configure(text=f"{round(pct * 100)}%")
-                self.stats_label.configure(
-                    text=f"已保存 {self.saved_count}/{self.progress_target} 篇 · 错误 {self.error_count} 条")
+                actual_ratio = self.saved_count / max(self.progress_target, 1)
+                target_progress = max(target_progress, actual_ratio)
+                self.stats_label.configure(text=f"已保存 {self.saved_count}/{self.progress_target} 篇 · 错误 {self.error_count} 条")
                 if self.start_time and self.saved_count > 0:
                     elapsed = max((datetime.now() - self.start_time).total_seconds(), 1)
                     speed = self.saved_count / elapsed * 60
-                    eta_min = int((self.progress_target - self.saved_count) / max(speed / 60, 0.01) // 60)
-                    self.speed_label.configure(text=f"≈ {speed:.1f} 篇/分  ·  预计剩余 {eta_min} 分")
+                    remain = max(self.progress_target - self.saved_count, 0)
+                    eta_seconds = int(remain / max(self.saved_count / elapsed, 0.01))
+                    self.speed_label.configure(text=f"约 {speed:.1f} 篇/分钟 · 预计剩余 {eta_seconds // 60} 分 {eta_seconds % 60:02d} 秒")
+
+            step = 0.006 if target_progress - self.visual_progress > 0.12 else 0.0035
+            self.visual_progress = min(target_progress, self.visual_progress + step)
+            self.progress_bar.set(self.visual_progress)
+            self.progress_pct.configure(text=f"{round(self.visual_progress * 100)}%")
         self._draw_stage_bar()
-        self.root.after(90, self._animate_progress)
+        self._refresh_metric_cards()
+        self.root.after(100, self._animate_progress)
 
     def _handle_line(self, line: str):
         stripped = line.strip()
-        # Streaming
-        if stripped.startswith("[TITLE]"):
-            self._append_stream(f"\n{stripped[8:].strip()}\n", "title")
-            return
-        if stripped.startswith("[SNIPPET]"):
-            self._append_stream(f"  {stripped[10:].strip()}\n", "body")
+        if not stripped:
             return
 
-        # Status
+        if stripped.startswith("[TITLE]") or stripped.startswith("[SNIPPET]"):
+            return
+
         if "[ERR]" in stripped or "Traceback" in stripped or "失败" in stripped:
-            tag, self.error_count = "bad", self.error_count + 1
+            tag = "bad"
+            self.error_count += 1
         elif "[OK]" in stripped or "Running on http://127.0.0.1:5050" in stripped:
             tag = "good"
+        elif "[SAVE]" in stripped or "已保存" in stripped:
+            tag = "accent"
         else:
             tag = "muted"
-        self._append_line(stripped if stripped else "", tag)
+
+        self._append_line(stripped, tag)
         self._set_stage_by_line(stripped)
 
         if "已保存" in stripped or "[SAVE]" in stripped:
-            self.saved_count += 1
-            self.progress_bar.set(min(1.0, self.saved_count / max(self.progress_target, 1)))
-            self.progress_pct.configure(text=f"{round(self.saved_count / max(self.progress_target, 1) * 100)}%")
+            self.saved_count = max(self.saved_count, self._count_generated_files())
+            pct = self.saved_count / max(self.progress_target, 1) if self.progress_target else 0
+            self.visual_progress = max(self.visual_progress, min(1.0, pct))
 
         if self.process_mode == "review" and "Running on http://127.0.0.1:5050" in stripped:
             self.status_text.configure(text="审阅台运行中")
+            self.status_dot.configure(text_color=PALETTE["success"])
+            self.summary_pill.configure(text="审阅台已启动")
             self.meta_label.configure(text="审阅台已启动 · 浏览器已打开")
-            self.status_dot.configure(text_color=C_GOOD)
         elif self.process_mode == "main":
-            self.status_text.configure(text="收尾中" if self.saved_count >= self.progress_target else "生成中")
-            self.meta_label.configure(
-                text=f"生成中 · {self.current_run_label} · {self.saved_count}/{self.progress_target} 篇")
+            self.status_text.configure(text="生成中" if self.saved_count < self.progress_target else "收尾中")
             self.status_dot.configure(text_color=self._cfg()["accent"])
+            self.summary_pill.configure(text=self.current_stage)
+            self.meta_label.configure(text=f"生成中 · {self.current_run_label} · {self.saved_count}/{self.progress_target} 篇")
+
         self.stats_label.configure(text=f"已保存 {self.saved_count}/{self.progress_target} 篇 · 错误 {self.error_count} 条")
+        self._refresh_metric_cards()
 
     def _handle_done(self, code: int):
-        elapsed = "-"
-        if self.start_time:
-            sec = int((datetime.now() - self.start_time).total_seconds())
-            elapsed = f"{sec // 60}分{sec % 60:02d}秒"
+        elapsed = self._format_runtime()
         if code == 0:
             self.stage_index = 4
-            self.stage_label.configure(text="全部完成")
+            self.current_stage = "全部完成"
+            self.visual_progress = 1.0
+            self.stage_label.configure(text=self.current_stage)
             self.status_text.configure(text="运行完成")
-            self.status_dot.configure(text_color=C_GOOD)
+            self.status_dot.configure(text_color=PALETTE["success"])
+            self.summary_pill.configure(text="已完成")
             self.meta_label.configure(text=f"{self.current_run_label} · 完成 · 用时 {elapsed}")
-            self._append_line(f"[{datetime.now().strftime('%H:%M:%S')}] 任务完成", "good")
             self.progress_bar.set(1.0)
             self.progress_pct.configure(text="100%")
             self.speed_label.configure(text=f"用时 {elapsed}")
-            self._show_toast(f"生成完成 · {self.progress_target} 篇 · {elapsed}")
+            self._append_line(f"[{datetime.now().strftime('%H:%M:%S')}] 任务完成", "good")
+            self._show_toast(f"生成完成 · {self.progress_target} 篇 · 用时 {elapsed}")
         else:
             self.status_text.configure(text="运行中断")
-            self.status_dot.configure(text_color=C_BAD)
+            self.status_dot.configure(text_color=PALETTE["danger"])
+            self.summary_pill.configure(text="已中断")
             if self.process_mode == "main" and self.saved_count < self.progress_target:
                 if self._remain_target <= 0:
                     self._remain_target = self.progress_target - self.saved_count
                 self.btn_continue.configure(text=f"继续生成剩余 {self._remain_target} 篇")
-                self.btn_continue.pack(fill="x", pady=(4, 0), before=self.btn_review)
+                self.btn_continue.pack(fill="x", pady=(10, 0))
             self.meta_label.configure(text=f"异常退出 · 退出码 {code} · 用时 {elapsed}")
             self._append_line(f"[{datetime.now().strftime('%H:%M:%S')}] 任务中断，退出码 {code}", "bad")
+
         self.process = None
         self.process_mode = None
+        self._draw_stage_bar()
+        self._refresh_metric_cards()
 
     def _poll_queue(self):
         while True:
@@ -831,13 +1313,9 @@ class LauncherApp:
     def _tick_runtime(self):
         if not self.process or self.process.poll() is not None:
             return
-        if self.start_time:
-            sec = int((datetime.now() - self.start_time).total_seconds())
-            self.meta_label.configure(
-                text=f"运行中 · {sec // 60}分{sec % 60:02d}秒 · {self.saved_count}/{self.progress_target} 篇")
+        self.meta_label.configure(text=f"运行中 · {self._format_runtime()} · {self.saved_count}/{self.progress_target} 篇")
+        self._refresh_metric_cards()
         self.root.after(1000, self._tick_runtime)
-
-    # ═══════════════ REVIEW ═══════════════
 
     def _start_review(self):
         if self._flask_thread and self._flask_thread.is_alive():
@@ -861,16 +1339,13 @@ class LauncherApp:
 
         def open_browser():
             webbrowser.open(f"http://127.0.0.1:{self._flask_port}")
-            self._append_line(f"审阅台已启动 → http://127.0.0.1:{self._flask_port}", "accent")
+            self._append_line(f"审阅台已启动 -> http://127.0.0.1:{self._flask_port}", "accent")
             self._show_toast("审阅台已在浏览器中打开")
 
         self.root.after(1500, open_browser)
 
-    # ═══════════════ CLOSE ═══════════════
-
     def _on_close(self):
         if self.process and self.process.poll() is None:
-            from tkinter import messagebox
             if not messagebox.askyesno(APP_TITLE, "当前任务还在运行，关闭窗口会终止任务。\n确定关闭吗？"):
                 return
             try:
@@ -898,8 +1373,6 @@ def _parse_worker_args(argv):
                 pass
             i += 2
         elif argv[i] == "--project" and i + 1 < len(argv):
-            global WORKER_PROJECT
-            WORKER_PROJECT = argv[i + 1]
             i += 2
         else:
             i += 1
@@ -909,7 +1382,7 @@ def _parse_worker_args(argv):
 def _run_worker():
     argv = sys.argv
     platform_only, custom_count = _parse_worker_args(argv)
-    project_key = "yiwu_weichuang"  # default
+    project_key = "yiwu_weichuang"
     i = 1
     while i < len(argv):
         if argv[i] == "--project" and i + 1 < len(argv):
@@ -918,7 +1391,6 @@ def _run_worker():
         else:
             i += 1
 
-    # 确保 worker 模式下 stdout/stderr 可用
     if sys.stdout is None:
         sys.stdout = open(os.devnull, "w", encoding="utf-8")
     if sys.stderr is None:
@@ -927,16 +1399,15 @@ def _run_worker():
     project_dir = os.path.join(PROJECTS_DIR, project_key)
     shared_dir = os.path.join(ROOT_DIR, "shared")
 
-    # 清除可能被 PyInstaller 冻结的旧项目模块缓存，防止品牌名串味
-    _PROJ_PREFIXES = (
+    project_prefixes = (
         "config", "modules", "profiles", "pathing",
         "project_paths", "bootstrap_shared", "main",
         "review_ui", "analyze",
     )
-    for _k in list(sys.modules):
-        for _pfx in _PROJ_PREFIXES:
-            if _k == _pfx or _k.startswith(_pfx + "."):
-                del sys.modules[_k]
+    for name in list(sys.modules):
+        for prefix in project_prefixes:
+            if name == prefix or name.startswith(prefix + "."):
+                del sys.modules[name]
                 break
 
     if project_dir not in sys.path:
@@ -944,16 +1415,13 @@ def _run_worker():
     if shared_dir not in sys.path:
         sys.path.append(shared_dir)
 
-    import bootstrap_shared
+    import bootstrap_shared  # noqa: F401
     from main import run
     run(platform_only=platform_only, custom_count=custom_count)
 
 
 if __name__ == "__main__":
-    argv = sys.argv
-    is_worker = "--worker" in argv[1:]
-    if is_worker:
-        # Worker mode — run generation script directly (called by subprocess)
+    if "--worker" in sys.argv[1:]:
         _run_worker()
     else:
         LauncherApp().run()

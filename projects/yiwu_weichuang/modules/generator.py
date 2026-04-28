@@ -16,7 +16,7 @@ from datetime import datetime
 from functools import lru_cache
 
 from config import BRAND, MIN_SCORE, MAX_RETRY, PLATFORM_MIN_SCORE, GENERATOR_PROVIDER
-from modules.profile_loader import get_active_profile
+from modules.profile_loader import get_active_profile, get_other_brand_aliases
 from modules.llm import call_llm
 from modules.randomizer import random_profile, random_style, random_trigger
 from modules.anti_ai import anti_ai_pipeline
@@ -37,11 +37,29 @@ _MODE_WEIGHTS = [v[1] for v in _MODES.values()]
 
 # 支持分段输出的模式（其他模式太短，不做分段）
 _SEGMENTED_MODES = {"info", "light_exp", "other_exp", "exp"}
+_FOREIGN_BRAND_ALIASES = tuple(get_other_brand_aliases())
 
 
 def _load(path: str) -> str:
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
+
+
+def _normalize_brand_text(text: str) -> str:
+    text = text or ""
+    for alias in _FOREIGN_BRAND_ALIASES:
+        if alias and alias in text:
+            text = text.replace(alias, BRAND)
+    return text
+
+
+def _filter_examples(examples: list[str]) -> list[str]:
+    filtered = []
+    for example in examples:
+        if any(alias and alias in example for alias in _FOREIGN_BRAND_ALIASES):
+            continue
+        filtered.append(example)
+    return filtered
 
 
 def _load_examples(platform: str, mode: str = "") -> str:
@@ -75,6 +93,7 @@ def _load_examples(platform: str, mode: str = "") -> str:
                 if body:
                     examples.append(body)
 
+        examples = _filter_examples(examples)
         if not examples:
             continue
 
@@ -396,6 +415,9 @@ def generate_article(keyword: str, platform: str, platform_prompt: str,
             record["fallback_used"] = True
             record["generator_provider"] = fallback_provider
     title, segments, article = _parse_segmented_output(raw)
+    title = _normalize_brand_text(title)
+    article = _normalize_brand_text(article)
+    segments = {name: _normalize_brand_text(value) for name, value in segments.items()}
     if platform == "sohu":
         title = _fix_sohu_title(title, article, mode)
     if title_suffix and title:
@@ -417,7 +439,7 @@ def generate_article(keyword: str, platform: str, platform_prompt: str,
     with step("[2/3] 去AI化"):
         article_after = anti_ai_pipeline(article)
     if article_after and len(article_after) > 50:
-        article = article_after
+        article = _normalize_brand_text(article_after)
         # 去AI化后分段信息失效：若后续需要局部改写，重新拆一下
         if segments:
             segments = _resplit_segments(article, segments)
@@ -448,12 +470,12 @@ def generate_article(keyword: str, platform: str, platform_prompt: str,
                         continue
                     new_seg = rewrite_segment(seg_name, old_seg, problems)
                     if new_seg and len(new_seg) > 20:
-                        segments[seg_name] = new_seg
+                        segments[seg_name] = _normalize_brand_text(new_seg)
                 article = _join_segments(segments)
             else:
                 # 降级：整篇重写
                 article = apply_random_rewrite(article)
-            article = anti_ai_pipeline(article) or article
+            article = _normalize_brand_text(anti_ai_pipeline(article) or article)
             if segments:
                 segments = _resplit_segments(article, segments)
 

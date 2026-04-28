@@ -10,13 +10,16 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 block_cipher = None
 
 datas = []
+IGNORED_DIRS = {"__pycache__", "output", "logs", ".git"}
+IGNORED_SUFFIXES = {".pyc", ".pyo"}
 
 # 所有提示词文件
 # Bundle shared/ directory (excluding __pycache__)
 for root, dirs, files in os.walk("shared"):
-    if "__pycache__" in root:
-        continue
+    dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
     for f in files:
+        if os.path.splitext(f)[1].lower() in IGNORED_SUFFIXES:
+            continue
         datas.append((os.path.join(root, f), root))
 
 # Bundle project files
@@ -24,9 +27,10 @@ for project in ["yiwu_yicheng", "yiwu_weichuang"]:
     base = os.path.join("projects", project)
     # Bundle all project files (py, txt, xlsx, json, jsonl)
     for root, dirs, files in os.walk(base):
-        if "__pycache__" in root:
-            continue
+        dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
         for f in files:
+            if os.path.splitext(f)[1].lower() in IGNORED_SUFFIXES:
+                continue
             src = os.path.join(root, f)
             dst = root  # keep directory structure intact
             datas.append((src, dst))
@@ -45,16 +49,24 @@ for runtime_dir in ("tcl8.6", "tk8.6"):
                 datas.append((src, dst))
 
 hiddenimports = [
-    "pandas", "numpy", "openpyxl",
-    "openai", "httpx",
-    "flask", "werkzeug", "jinja2", "markupsafe",
-    "tkinter", "tkinter.ttk", "tkinter.messagebox",
+    "pandas",
+    "numpy",
+    "openpyxl",
+    "openai",
+    "httpx",
+    "flask",
+    "werkzeug",
+    "jinja2",
+    "markupsafe",
+    "tkinter",
+    "tkinter.ttk",
+    "tkinter.messagebox",
     "customtkinter",
+    "rich.console",
+    "rich.panel",
 ]
-# 递归收集大型库的所有子模块，避免遗漏
+# customtkinter 资源较特殊，保留其子模块自动收集
 hiddenimports += collect_submodules("customtkinter")
-hiddenimports += collect_submodules("rich")
-hiddenimports += collect_submodules("pandas")
 
 a = Analysis(
     ["launcher_gui.pyw"],
@@ -65,7 +77,32 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["matplotlib", "scipy", "PIL", "pytest"],
+    excludes=[
+        "matplotlib",
+        "matplotlib.pyplot",
+        "scipy",
+        "PIL",
+        "pytest",
+        "pandas.tests",
+        "numpy.tests",
+        "pyarrow",
+        "numba",
+        "sklearn",
+        "IPython",
+        "jupyter",
+        "dotenv",
+        "flask.cli",
+        "click.testing",
+        "setuptools",
+        "pygments",
+        "markdown_it",
+        "mdurl",
+        "rich.markdown",
+        "rich.pretty",
+        "rich.syntax",
+        "rich.traceback",
+        "attr",
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
