@@ -8,8 +8,17 @@ PROFILE = {
         "男科": 0.10,
         "常规体检": 0.10,
     },
+    "department_keywords": {
+        "妇科": ["妇科", "白带", "月经", "人流", "备孕", "宫颈", "妇科检查", "早孕", "产后", "不孕", "不育"],
+        "男科": ["男科", "前列腺", "男性", "包皮", "龟头", "早泄", "阳痿", "勃起"],
+    },
     "keyword_file": "data/keywords/yiwu_weichuang.xlsx",
     "brand_aliases": ["义乌微创医院"],
+    "generator_settings": {
+        "title_rule_variant": "yiwu_weichuang",
+        "normalize_foreign_brands": True,
+        "filter_foreign_examples": True,
+    },
     "platform_rules": {
         "sohu": {
             "title_style": "descriptive",

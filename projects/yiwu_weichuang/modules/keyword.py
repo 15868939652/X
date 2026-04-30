@@ -1,6 +1,6 @@
 from project_paths import prompt_path
 from config import BRAND, AUX_PROVIDER
-from modules.llm import call_llm
+from modules.llm import call_llm_result
 from modules.profile_loader import get_other_brand_aliases
 
 
@@ -18,7 +18,8 @@ def _normalize_brand_text(text: str) -> str:
 
 def expand_keywords(core_keyword: str, template: str) -> list:
     prompt = template.replace("{核心词}", core_keyword).replace("{品牌}", BRAND)
-    result = call_llm(prompt, provider=AUX_PROVIDER)
+    llm_result = call_llm_result(prompt, provider=AUX_PROVIDER, retries=1, stage="keyword_expand")
+    result = llm_result.content
 
     keywords = []
     for line in result.split("\n"):
@@ -39,7 +40,10 @@ def expand_one(core_keyword: str) -> str:
         .replace("{核心词}", core_keyword)
         .replace("{品牌}", BRAND)
     )
-    result = call_llm(prompt, fast=True, provider=AUX_PROVIDER).strip()
+    llm_result = call_llm_result(prompt, fast=True, provider=AUX_PROVIDER, retries=1, stage="keyword_expand_one")
+    if llm_result.failed or llm_result.empty:
+        return core_keyword
+    result = llm_result.content.strip()
     result = result.lstrip("0123456789.-、").strip('"""\'\'\'')
     result = _normalize_brand_text(result)
 
