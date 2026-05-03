@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python main.py --count 1 --platform zhihu --workers 1)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(python tests/generate_golden_hashes.py)",
+      "Bash(python c:/Users/Administrator/Documents/GitHub/X/tests/generate_golden_hashes.py)",
+      "Bash(python ../../tests/generate_golden_hashes.py)",
+      "Bash(python -m pytest tests/test_prompt_identity.py -v)",
+      "Bash(python -m unittest tests.test_prompt_identity -v)",
+      "Bash(python -c ' *)",
+      "Bash(python -m unittest tests.test_llm_and_scorer -v)",
+      "Bash(python -m unittest tests.test_prompt_identity tests.test_llm_and_scorer -v)",
+      "Bash(cp '/c/Users/Administrator/Documents/GitHub/X/projects/yiwu_weichuang/prompts/anti_ai/*.txt' /c/Users/Administrator/Documents/GitHub/X/shared/prompts/common/anti_ai/)",
+      "Bash(cp '/c/Users/Administrator/Documents/GitHub/X/projects/yiwu_weichuang/prompts/rewriter/*.txt' /c/Users/Administrator/Documents/GitHub/X/shared/prompts/common/rewriter/)",
+      "Bash(cp '/c/Users/Administrator/Documents/GitHub/X/projects/yiwu_weichuang/prompts/industry/*.txt' /c/Users/Administrator/Documents/GitHub/X/shared/prompts/common/industry/)",
+      "Bash(python -m pytest tests/test_llm_and_scorer.py -v)",
+      "Bash(python -c \"import launcher_core.ui.widgets; import launcher_core.ui.themes; print\\('UI modules import OK'\\)\")",
+      "Bash(python -c \"from launcher_core.app import LauncherApp; print\\('app.py imports OK, lines:', len\\(open\\('launcher_core/app.py'\\).readlines\\(\\)\\)\\)\")",
+      "Bash(python -m unittest tests.test_generation_pipeline -v)",
+      "Bash(python -m unittest tests.test_prompt_identity tests.test_llm_and_scorer tests.test_generation_pipeline -v)",
+      "Bash(python -c \"from launcher_core.app import LauncherApp; print\\('Import OK'\\)\")",
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(python -m unittest discover -s tests -v)",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, '.'\\); from launcher_core.ui.themes import PROJECTS, apply_theme; from launcher_core.ui.widgets import panel, title, subtext, entry_row, bind_click; from launcher_core.process_manager import launch_batch, process_is_running, terminate_process_tree; from launcher_core.log_parser import extract_global_stage, capture_log_path, handle_line, handle_process_done, consume_session_log, sync_session_log, poll_queue; from launcher_core.events.handlers import on_main_action, on_secondary_action, start_new_run, clear_current_run, stop_run; print\\('All modules imported successfully'\\)\")",
+      "Bash(pyinstaller launcher.spec --noconfirm)",
+      "Bash(python -m unittest tests/test_prompt_identity.py tests/test_llm_and_scorer.py tests/test_generation_pipeline.py -v)",
+      "Bash(python -m unittest discover -s c:/Users/Administrator/Documents/GitHub/X/tests -v)",
+      "WebSearch",
+      "Bash(PYTHONPATH=\"shared;tests;projects/yiwu_yicheng\" python -m pytest tests/test_prompt_identity.py -v)",
+      "Bash(PYTHONPATH=\"shared;tests;projects/yiwu_yicheng\" python -m unittest tests.test_prompt_identity -v)",
+      "Bash(ls -la dist/)",
+      "Bash(ls -la build/)"
+    ]
+  }
+}
