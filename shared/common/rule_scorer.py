@@ -36,23 +36,7 @@ HESITATION_MARKERS = [
     "有点", "还在", "刚了解", "仅供参考", "纠结",
 ]
 
-# ---------- 按写作模式的字数要求（优先用这个，没有再 fallback 到平台） ----------
-MODE_LENGTH = {
-    "info":       (400, 900),
-    "light_exp":  (400, 900),
-    "other_exp":  (400, 900),
-    "exp":        (200, 500),
-    "hesitate":   (150, 350),
-    "short":      (100, 250),
-}
-
-# ---------- 平台字数要求（fallback） ----------
-PLATFORM_LENGTH = {
-    "toutiao":   (200, 800),
-    "zhihu":     (300, 900),
-    "sohu":      (400, 1500),
-    "baijiahao": (300, 1200),
-}
+from constants import MODE_LENGTH, PLATFORM_LENGTH
 
 
 def _count_hits(text: str, items) -> int:

@@ -39,18 +39,8 @@ def save_article(platform: str, title: str, content: str, platform_index: int, m
     os.makedirs(folder, exist_ok=True)
     filename = os.path.join(folder, f"{platform}_{platform_index}.txt")
 
-    header = ""
-    if meta:
-        lines = ["<!-- baseline meta"]
-        for key in ("mode", "platform", "profile", "style", "trigger", "first_draft_score", "final_score", "retries", "passed"):
-            if key in meta:
-                lines.append(f"{key}: {meta[key]}")
-        lines.append("annotation: ai_taste=?/10 structure_ok=? publishable=? notes=")
-        lines.append("-->\n")
-        header = "\n".join(lines) + "\n"
-
     with open(filename, "w", encoding="utf-8") as f:
-        f.write(header + f"{title}\n\n{content}")
+        f.write(f"{title}\n\n{content}")
 
     show_saved(filename)
     return filename
@@ -201,7 +191,6 @@ def run(
                 show_error(f"#{tid} {platform} / {kw[:20]} 失败：{exc}")
 
     console.print(f"\n[green][OK] 本次 baseline 日志已保存至：{log_path}[/green]")
-    console.print(f"[dim]运行 python analyze.py {log_path} 查看统计[/dim]")
 
 
 def cli():

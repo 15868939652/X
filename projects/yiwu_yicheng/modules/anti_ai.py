@@ -1,1 +1,1 @@
-from common.anti_ai import *  # noqa: F401,F403
+from common.anti_ai import anti_ai_pipeline  # noqa: F401

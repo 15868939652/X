@@ -1,22 +1,7 @@
-import os
 from config import BRAND, AUX_PROVIDER
 from project_paths import prompt_path
 from modules.llm import call_llm_result
 
-
-def expand_keywords(core_keyword: str, template: str) -> list:
-    """批量扩展：从一个核心词扩展出多个长尾词（保留备用）"""
-    prompt = template.replace("{核心词}", core_keyword).replace("{品牌}", BRAND)
-    llm_result = call_llm_result(prompt, provider=AUX_PROVIDER, retries=1, stage="keyword_expand")
-    result = llm_result.content
-
-    keywords = []
-    for line in result.split("\n"):
-        line = line.strip()
-        if len(line) > 4:
-            keywords.append(line)
-
-    return list(set(keywords))
 
 
 def expand_one(core_keyword: str) -> str:

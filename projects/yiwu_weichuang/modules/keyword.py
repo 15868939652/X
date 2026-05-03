@@ -16,19 +16,6 @@ def _normalize_brand_text(text: str) -> str:
     return text
 
 
-def expand_keywords(core_keyword: str, template: str) -> list:
-    prompt = template.replace("{核心词}", core_keyword).replace("{品牌}", BRAND)
-    llm_result = call_llm_result(prompt, provider=AUX_PROVIDER, retries=1, stage="keyword_expand")
-    result = llm_result.content
-
-    keywords = []
-    for line in result.split("\n"):
-        line = _normalize_brand_text(line)
-        if len(line) > 4:
-            keywords.append(line)
-
-    return list(set(keywords))
-
 
 def expand_one(core_keyword: str) -> str:
     path = prompt_path("keyword_expand_one.txt")

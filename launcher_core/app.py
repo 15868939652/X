@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import sys
 import threading
-import webbrowser
+
 from datetime import datetime
 from pathlib import Path
 
@@ -17,6 +17,27 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 
 from launcher_core.config_manager import ConfigManager
+from launcher_core.events.handlers import (
+    clear_current_run,
+    copy_selected_task,
+    delete_selected_task,
+    export_selected_task,
+    on_main_action,
+    on_secondary_action,
+    retry_selected_task,
+    start_new_run,
+    stop_run,
+)
+from launcher_core.log_parser import (
+    capture_log_path,
+    consume_session_log,
+    discover_log_path,
+    extract_global_stage,
+    handle_line,
+    handle_process_done,
+    poll_queue,
+    sync_session_log,
+)
 from launcher_core.models import (
     GLOBAL_COMPLETED,
     GLOBAL_FAILED,
@@ -29,7 +50,16 @@ from launcher_core.models import (
     TASK_SUCCESS,
     Task,
 )
+from launcher_core.process_manager import (
+    launch_batch,
+    process_is_running,
+    terminate_process_tree,
+    _build_launch_cmd,
+    _read_output,
+)
 from launcher_core.task_manager import TaskManager
+from launcher_core.ui.themes import PROJECTS, apply_theme
+from launcher_core.ui.widgets import bind_click, entry_row, panel, subtext, title
 
 APP_TITLE = "多平台文章生成器"
 APP_SUBTITLE = "内容生产控制系统"
@@ -46,20 +76,6 @@ GENERATION_MODE_LABELS = {
     "one_shot": "一稿直出模式",
 }
 GENERATION_MODE_KEYS = {label: key for key, label in GENERATION_MODE_LABELS.items()}
-PROJECTS = {
-    "yiwu_yicheng": {
-        "label": "义乌义城医院",
-        "accent": "#2F74B5",
-        "accent_deep": "#1E558A",
-        "accent_soft": "#EEF5FC",
-    },
-    "yiwu_weichuang": {
-        "label": "义乌微创医院",
-        "accent": "#D986AE",
-        "accent_deep": "#B86490",
-        "accent_soft": "#FDF1F7",
-    },
-}
 STATUS_LABELS = {
     TASK_PENDING: "待执行",
     TASK_RUNNING: "运行中",
@@ -181,9 +197,12 @@ class LauncherApp:
         self.batch_target = 0
         self.batch_saved = 0
         self.batch_errors = 0
+        self._ui_refresh_scheduled = False
+        self._task_cards: dict[str, dict] = {}
         self.current_plan_path = ""
         self.selected_task_id: str | None = None
-        self._flask_thread: threading.Thread | None = None
+
+
         self._toast_after_id = None
         self._pause_file_path = ""
         self._pause_timeout_id = None
@@ -194,7 +213,7 @@ class LauncherApp:
         self.workers_var = tk.StringVar(value="2")
         self.generation_mode_var = tk.StringVar(value=GENERATION_MODE_LABELS["fast"])
         self.platform_vars = {key: tk.BooleanVar(value=True) for key, _ in PLATFORMS}
-        self.template_var = tk.StringVar(value="")
+
 
         _ensure_runtime_project(self.project_var.get())
         self._build_ui()
@@ -220,41 +239,29 @@ class LauncherApp:
         self._build_footer()
 
     def _panel(self, parent, fg="#FFFFFF", border="#D8E3EE", radius=16):
-        return ctk.CTkFrame(parent, fg_color=fg, corner_radius=radius, border_width=1, border_color=border)
+        return panel(parent, fg=fg, border=border, radius=radius)
 
     def _title(self, parent, text: str, size: int = 13):
-        return ctk.CTkLabel(
-            parent,
-            text=text,
-            font=ctk.CTkFont(family="Microsoft YaHei UI", size=size, weight="bold"),
-            text_color="#133248",
-        )
+        return title(parent, text=text, size=size)
 
     def _subtext(self, parent, text: str, wrap: int = 270):
-        return ctk.CTkLabel(
-            parent,
-            text=text,
-            justify="left",
-            wraplength=wrap,
-            font=ctk.CTkFont(family="Microsoft YaHei UI", size=11),
-            text_color="#6B8195",
-        )
+        return subtext(parent, text=text, wrap=wrap)
 
     def _build_topbar(self) -> None:
-        top = ctk.CTkFrame(self.root, fg_color="#FFFFFF", corner_radius=0, height=68, border_width=1, border_color="#D8E3EE")
+        top = ctk.CTkFrame(self.root, fg_color="#FFFFFF", corner_radius=0, height=64, border_width=1, border_color="#E2E8F0")
         top.grid(row=0, column=0, columnspan=2, sticky="ew")
         top.grid_propagate(False)
         top.grid_columnconfigure(1, weight=1)
 
         brand = ctk.CTkFrame(top, fg_color="transparent")
-        brand.grid(row=0, column=0, sticky="w", padx=(18, 14), pady=12)
+        brand.grid(row=0, column=0, sticky="w", padx=(20, 14), pady=10)
         self.brand_badge = ctk.CTkLabel(
             brand,
             text="X",
-            width=40,
-            height=40,
-            corner_radius=12,
-            font=ctk.CTkFont(family="Segoe UI Semibold", size=20, weight="bold"),
+            width=38,
+            height=38,
+            corner_radius=10,
+            font=ctk.CTkFont(family="Segoe UI Semibold", size=18, weight="bold"),
             text_color="#FFFFFF",
         )
         self.brand_badge.pack(side="left")
@@ -263,76 +270,76 @@ class LauncherApp:
         ctk.CTkLabel(
             brand_text,
             text=APP_TITLE,
-            font=ctk.CTkFont(family="Segoe UI Semibold", size=20, weight="bold"),
-            text_color="#133248",
+            font=ctk.CTkFont(family="Segoe UI Semibold", size=18, weight="bold"),
+            text_color="#0F172A",
         ).pack(anchor="w")
         ctk.CTkLabel(
             brand_text,
             text=APP_SUBTITLE,
-            font=ctk.CTkFont(family="Microsoft YaHei UI", size=11),
-            text_color="#617A91",
+            font=ctk.CTkFont(family="Microsoft YaHei UI", size=10),
+            text_color="#94A3B8",
         ).pack(anchor="w")
 
         controls = ctk.CTkFrame(top, fg_color="transparent")
-        controls.grid(row=0, column=1, sticky="e", padx=(0, 18), pady=12)
-        ctk.CTkLabel(controls, text="项目", font=ctk.CTkFont(family="Microsoft YaHei UI", size=12, weight="bold"), text_color="#617A91").grid(row=0, column=0, padx=(0, 8))
+        controls.grid(row=0, column=1, sticky="e", padx=(0, 16), pady=10)
+        ctk.CTkLabel(controls, text="项目选择", font=ctk.CTkFont(family="Microsoft YaHei UI", size=11), text_color="#64748B").grid(row=0, column=0, padx=(0, 8))
         self.project_combo = ctk.CTkComboBox(
             controls,
-            width=160,
-            height=38,
+            width=156,
+            height=36,
             values=[cfg["label"] for cfg in PROJECTS.values()],
             state="readonly",
             command=self._on_combo_project_change,
         )
-        self.project_combo.grid(row=0, column=1, padx=(0, 12))
+        self.project_combo.grid(row=0, column=1, padx=(0, 10))
 
         self.main_btn = ctk.CTkButton(
             controls,
             text=GLOBAL_ACTION_LABELS[GLOBAL_IDLE],
-            width=128,
-            height=40,
-            corner_radius=14,
-            font=ctk.CTkFont(family="Segoe UI Semibold", size=14, weight="bold"),
+            width=120,
+            height=38,
+            corner_radius=12,
+            font=ctk.CTkFont(family="Segoe UI Semibold", size=13, weight="bold"),
             command=self.on_main_action,
         )
-        self.main_btn.grid(row=0, column=2, padx=(0, 10))
+        self.main_btn.grid(row=0, column=2, padx=(0, 8))
         self.stop_btn = ctk.CTkButton(
             controls,
             text="停止",
-            width=96,
-            height=40,
-            corner_radius=14,
+            width=88,
+            height=38,
+            corner_radius=12,
             command=self.on_secondary_action,
         )
         self.stop_btn.grid(row=0, column=3)
 
     def _build_sidebar(self) -> None:
-        shell = ctk.CTkFrame(self.root, fg_color="#F7FAFD", width=304, corner_radius=0)
+        shell = ctk.CTkFrame(self.root, fg_color="#F8FAFC", width=300, corner_radius=0)
         shell.grid(row=1, column=0, sticky="nsew")
         shell.grid_propagate(False)
         shell.grid_rowconfigure(0, weight=1)
         shell.grid_columnconfigure(0, weight=1)
 
-        sidebar = ctk.CTkScrollableFrame(shell, width=284, fg_color="transparent")
-        sidebar.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+        sidebar = ctk.CTkScrollableFrame(shell, width=280, fg_color="transparent")
+        sidebar.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         sidebar.grid_columnconfigure(0, weight=1)
         self.sidebar = sidebar
 
         intro = self._panel(sidebar)
-        intro.grid(row=0, column=0, sticky="ew", pady=(0, 14))
+        intro.grid(row=0, column=0, sticky="ew", pady=(0, 10))
         intro_inner = ctk.CTkFrame(intro, fg_color="transparent")
-        intro_inner.pack(fill="x", padx=16, pady=16)
+        intro_inner.pack(fill="x", padx=14, pady=14)
         self._title(intro_inner, "内容生产工作台").pack(anchor="w")
         self._subtext(
             intro_inner,
-            "面向医疗内容批量生成、过程质控与结果交付，支持任务追踪、模板复用、失败重试和批次复盘。",
-            wrap=258,
-        ).pack(anchor="w", pady=(8, 0))
+            "医疗内容批量生成、过程质控与结果交付。支持任务追踪、模板复用、失败重试和批次复盘。",
+            wrap=244,
+        ).pack(anchor="w", pady=(6, 0))
 
         project_card = self._panel(sidebar)
-        project_card.grid(row=1, column=0, sticky="ew", pady=(0, 14))
+        project_card.grid(row=1, column=0, sticky="ew", pady=(0, 10))
         inner = ctk.CTkFrame(project_card, fg_color="transparent")
-        inner.pack(fill="x", padx=16, pady=16)
+        inner.pack(fill="x", padx=14, pady=14)
         self._title(inner, "1. 项目选择").pack(anchor="w")
         self.project_radios = {}
         for index, (key, cfg) in enumerate(PROJECTS.items()):
@@ -341,9 +348,9 @@ class LauncherApp:
             self.project_radios[key] = radio
 
         platform_card = self._panel(sidebar)
-        platform_card.grid(row=2, column=0, sticky="ew", pady=(0, 14))
+        platform_card.grid(row=2, column=0, sticky="ew", pady=(0, 10))
         inner = ctk.CTkFrame(platform_card, fg_color="transparent")
-        inner.pack(fill="x", padx=16, pady=16)
+        inner.pack(fill="x", padx=14, pady=14)
         self._title(inner, "2. 平台选择").pack(anchor="w")
         self._subtext(inner, "支持一键全平台，也支持一键切到单个平台。").pack(anchor="w", pady=(8, 0))
 
@@ -386,9 +393,9 @@ class LauncherApp:
         self.platform_hint.pack(anchor="w", pady=(10, 0))
 
         settings_card = self._panel(sidebar)
-        settings_card.grid(row=3, column=0, sticky="ew", pady=(0, 14))
+        settings_card.grid(row=3, column=0, sticky="ew", pady=(0, 10))
         inner = ctk.CTkFrame(settings_card, fg_color="transparent")
-        inner.pack(fill="x", padx=16, pady=16)
+        inner.pack(fill="x", padx=14, pady=14)
         self._title(inner, "3. 生成设置").pack(anchor="w")
         self.mode_combo = ctk.CTkComboBox(
             inner,
@@ -406,27 +413,10 @@ class LauncherApp:
         self.settings_hint = self._subtext(inner, "")
         self.settings_hint.pack(anchor="w", pady=(12, 0))
 
-        template_card = self._panel(sidebar)
-        template_card.grid(row=4, column=0, sticky="ew", pady=(0, 14))
-        inner = ctk.CTkFrame(template_card, fg_color="transparent")
-        inner.pack(fill="x", padx=16, pady=16)
-        self._title(inner, "4. 配置模板").pack(anchor="w")
-        self.template_combo = ctk.CTkComboBox(inner, width=240, height=36, values=[], variable=self.template_var, state="readonly")
-        self.template_combo.pack(anchor="w", pady=(10, 0))
-        actions = ctk.CTkFrame(inner, fg_color="transparent")
-        actions.pack(fill="x", pady=(10, 0))
-        actions.grid_columnconfigure((0, 1, 2), weight=1, uniform="t")
-        self.template_save_btn = ctk.CTkButton(actions, text="保存", height=34, corner_radius=12, command=self.save_template)
-        self.template_save_btn.grid(row=0, column=0, sticky="ew", padx=(0, 4))
-        self.template_load_btn = ctk.CTkButton(actions, text="加载", height=34, corner_radius=12, command=self.load_template)
-        self.template_load_btn.grid(row=0, column=1, sticky="ew", padx=4)
-        self.template_delete_btn = ctk.CTkButton(actions, text="删除", height=34, corner_radius=12, command=self.delete_template)
-        self.template_delete_btn.grid(row=0, column=2, sticky="ew", padx=(4, 0))
-
         tool_card = self._panel(sidebar)
-        tool_card.grid(row=5, column=0, sticky="ew", pady=(0, 8))
+        tool_card.grid(row=4, column=0, sticky="ew", pady=(0, 8))
         inner = ctk.CTkFrame(tool_card, fg_color="transparent")
-        inner.pack(fill="x", padx=16, pady=16)
+        inner.pack(fill="x", padx=14, pady=14)
         self._title(inner, "快捷入口").pack(anchor="w")
         grid = ctk.CTkFrame(inner, fg_color="transparent")
         grid.pack(fill="x", pady=(10, 0))
@@ -436,17 +426,10 @@ class LauncherApp:
         self.btn_txt_dir = ctk.CTkButton(grid, text="TXT目录", height=34, corner_radius=12, command=self.open_latest_txt_folder)
         self.btn_txt_dir.grid(row=0, column=1, sticky="ew", padx=(4, 0), pady=(0, 6))
         self.btn_txt_file = ctk.CTkButton(grid, text="TXT文件", height=34, corner_radius=12, command=self.open_latest_txt_file)
-        self.btn_txt_file.grid(row=1, column=0, sticky="ew", padx=(0, 4))
-        self.btn_review = ctk.CTkButton(grid, text="审核台", height=34, corner_radius=12, command=self.start_review)
-        self.btn_review.grid(row=1, column=1, sticky="ew", padx=(4, 0))
+        self.btn_txt_file.grid(row=1, column=0, sticky="ew", padx=(0, 4), columnspan=2)
 
     def _entry_row(self, parent, label: str, variable: tk.StringVar):
-        row = ctk.CTkFrame(parent, fg_color="transparent")
-        row.pack(fill="x", pady=(12, 0))
-        ctk.CTkLabel(row, text=label, font=ctk.CTkFont(family="Microsoft YaHei UI", size=12, weight="bold"), text_color="#617A91").pack(side="left")
-        entry = ctk.CTkEntry(row, width=96, height=36, textvariable=variable, justify="center", corner_radius=12)
-        entry.pack(side="right")
-        return entry
+        return entry_row(parent, label=label, variable=variable)
 
     def _build_main(self) -> None:
         main = ctk.CTkFrame(self.root, fg_color="transparent")
@@ -461,27 +444,29 @@ class LauncherApp:
 
     def _build_stats(self, parent) -> None:
         row = ctk.CTkFrame(parent, fg_color="transparent")
-        row.grid(row=0, column=0, sticky="ew", pady=(0, 14))
+        row.grid(row=0, column=0, sticky="ew", pady=(0, 12))
         for idx in range(4):
             row.grid_columnconfigure(idx, weight=1, uniform="stats")
 
         self.stats_cards = {}
-        stats = [
-            ("success", "已完成"),
-            ("failed", "失败数"),
-            ("progress", "进度"),
-            ("runtime", "运行时间"),
+        stat_configs = [
+            ("success", "已完成", "#22C55E"),
+            ("failed", "失败数", "#EF4444"),
+            ("progress", "进度", "#3B82F6"),
+            ("runtime", "运行时间", "#8B5CF6"),
         ]
-        for idx, (key, title) in enumerate(stats):
-            card = self._panel(row)
+        for idx, (key, title, accent_color) in enumerate(stat_configs):
+            card = self._panel(row, radius=14)
             card.grid(row=0, column=idx, sticky="ew", padx=(0 if idx == 0 else 6, 0 if idx == 3 else 6))
             inner = ctk.CTkFrame(card, fg_color="transparent")
-            inner.pack(fill="x", padx=16, pady=16)
-            ctk.CTkLabel(inner, text=title, font=ctk.CTkFont(family="Microsoft YaHei UI", size=12), text_color="#617A91").pack(anchor="w")
-            value = ctk.CTkLabel(inner, text="0", font=ctk.CTkFont(family="Segoe UI Semibold", size=28, weight="bold"), text_color="#133248")
-            value.pack(anchor="w", pady=(8, 0))
-            hint = ctk.CTkLabel(inner, text="", font=ctk.CTkFont(family="Microsoft YaHei UI", size=11), text_color="#8CA0B2")
-            hint.pack(anchor="w", pady=(4, 0))
+            inner.pack(fill="x", padx=14, pady=12)
+            # Subtle color dot indicator
+            dot = ctk.CTkLabel(inner, text="", width=8, height=8, corner_radius=4, fg_color=accent_color)
+            ctk.CTkLabel(inner, text=title, font=ctk.CTkFont(family="Microsoft YaHei UI", size=11, weight="bold"), text_color="#475569").pack(anchor="w", pady=(0, 6))
+            value = ctk.CTkLabel(inner, text="0", font=ctk.CTkFont(family="Segoe UI Semibold", size=26, weight="bold"), text_color="#0F172A")
+            value.pack(anchor="w")
+            hint = ctk.CTkLabel(inner, text="", font=ctk.CTkFont(family="Microsoft YaHei UI", size=11), text_color="#94A3B8")
+            hint.pack(anchor="w", pady=(2, 0))
             self.stats_cards[key] = {"value": value, "hint": hint}
 
     def _build_summary(self, parent) -> None:
@@ -649,10 +634,12 @@ class LauncherApp:
         self.calls_box.pack(fill="x", pady=(12, 0))
 
     def _build_footer(self) -> None:
+        sep = ctk.CTkFrame(self.root, height=1, fg_color="#E2E8F0", corner_radius=0)
+        sep.grid(row=2, column=0, columnspan=2, sticky="ew", padx=18, pady=(0, 0))
         footer = ctk.CTkFrame(self.root, fg_color="transparent")
-        footer.grid(row=2, column=0, columnspan=2, sticky="ew", padx=18, pady=(0, 10))
+        footer.grid(row=3, column=0, columnspan=2, sticky="ew", padx=18, pady=(6, 8))
         footer.grid_columnconfigure(0, weight=1)
-        self.footer_status = ctk.CTkLabel(footer, text="等待启动", font=ctk.CTkFont(family="Microsoft YaHei UI", size=11), text_color="#617A91")
+        self.footer_status = ctk.CTkLabel(footer, text="待机中 · 准备就绪", font=ctk.CTkFont(family="Microsoft YaHei UI", size=11), text_color="#94A3B8")
         self.footer_status.grid(row=0, column=0, sticky="w")
         self.toast_label = ctk.CTkLabel(footer, text="", corner_radius=999, padx=14, pady=6, font=ctk.CTkFont(family="Microsoft YaHei UI", size=11, weight="bold"))
         self.toast_label.grid(row=0, column=1, sticky="e")
@@ -662,7 +649,6 @@ class LauncherApp:
         if payload:
             self._apply_config_payload(payload, save_last=False)
         self.project_combo.set(PROJECTS[self.project_var.get()]["label"])
-        self._reload_template_combo()
         self._refresh_hints()
         self._refresh_ui_state()
         self._render_tasks()
@@ -701,31 +687,7 @@ class LauncherApp:
         self._persist_current_config()
 
     def _apply_theme(self) -> None:
-        cfg = self._cfg()
-        accent = cfg["accent"]
-        accent_deep = cfg["accent_deep"]
-        accent_soft = cfg["accent_soft"]
-        self.brand_badge.configure(fg_color=accent)
-        self.main_btn.configure(fg_color=accent, hover_color=accent_deep, text_color="#FFFFFF")
-        for btn in [
-            self.stop_btn,
-            self.platform_all_btn,
-            self.template_save_btn,
-            self.template_load_btn,
-            self.template_delete_btn,
-            self.btn_latest_dir,
-            self.btn_txt_dir,
-            self.btn_txt_file,
-            self.btn_review,
-            self.task_retry_btn,
-            self.task_copy_btn,
-            self.task_export_btn,
-            self.task_delete_btn,
-            *self.single_platform_buttons.values(),
-        ]:
-            btn.configure(fg_color=accent_soft, hover_color=accent_soft, text_color=accent_deep, border_width=1, border_color=accent)
-        self.progress_bar.configure(progress_color=accent)
-        self.batch_state_chip.configure(fg_color=accent_soft, text_color=accent_deep)
+        apply_theme(self)
 
     def _collect_config_payload(self) -> dict:
         return {
@@ -761,50 +723,6 @@ class LauncherApp:
         if value in GENERATION_MODE_LABELS:
             return value
         return GENERATION_MODE_KEYS.get(value, "fast")
-
-    def _reload_template_combo(self) -> None:
-        templates = self.config_manager.list_templates()
-        values = [item["name"] for item in templates]
-        self.template_combo.configure(values=values or [""])
-        if values:
-            current = self.template_var.get()
-            self.template_combo.set(current if current in values else values[0])
-        else:
-            self.template_combo.set("")
-
-    def save_template(self) -> None:
-        dialog = ctk.CTkInputDialog(text="输入模板名称", title="保存模板")
-        name = dialog.get_input() if dialog else None
-        if not name:
-            return
-        try:
-            clean_name = self.config_manager.save_template(name, self._collect_config_payload())
-        except ValueError as exc:
-            messagebox.showerror(APP_TITLE, str(exc))
-            return
-        self.template_var.set(clean_name)
-        self._reload_template_combo()
-        self._show_toast(f"模板已保存：{clean_name}")
-
-    def load_template(self) -> None:
-        item = self.config_manager.load_template(self.template_var.get())
-        if not item:
-            self._show_toast("未找到该模板")
-            return
-        self._apply_config_payload(item)
-        self.switch_project()
-        self._show_toast(f"已加载模板：{item['name']}")
-
-    def delete_template(self) -> None:
-        name = self.template_var.get()
-        if not name:
-            return
-        if not messagebox.askyesno(APP_TITLE, f"确定删除模板“{name}”吗？"):
-            return
-        if self.config_manager.delete_template(name):
-            self.template_var.set("")
-            self._reload_template_combo()
-            self._show_toast(f"已删除模板：{name}")
 
     def _selected_platforms(self) -> list[str]:
         return [key for key, _ in PLATFORMS if self.platform_vars[key].get()]
@@ -864,36 +782,13 @@ class LauncherApp:
         self._persist_current_config()
 
     def on_main_action(self) -> None:
-        if self.task_manager.global_state not in {GLOBAL_RUNNING, GLOBAL_PAUSED}:
-            self.start_new_run()
+        on_main_action(self)
 
     def on_secondary_action(self) -> None:
-        if self._process_is_running() or self.task_manager.global_state in {GLOBAL_RUNNING, GLOBAL_PAUSED}:
-            self.stop_run()
-            return
-        if self.task_manager.ordered_tasks() or self.batch_target > 0:
-            self.clear_current_run()
+        on_secondary_action(self)
 
     def start_new_run(self) -> None:
-        if self.process and self.process.poll() is None:
-            return
-        platforms = self._selected_platforms()
-        if not platforms:
-            self._show_toast("请至少选择一个平台")
-            return
-
-        count = self._safe_int(self.count_var.get(), 12)
-        workers = self._safe_int(self.workers_var.get(), 3)
-        project_key = self.project_var.get()
-        _ensure_runtime_project(project_key)
-        self.task_manager.reset()
-        self.task_manager.global_state = GLOBAL_RUNNING
-        self.selected_task_id = None
-        self.batch_target = count
-        self.batch_saved = 0
-        self.batch_errors = 0
-        self._persist_current_config()
-        self._launch_batch(count, workers, platforms, reset_log=True)
+        start_new_run(self)
 
     def pause_run(self) -> None:
         self._show_toast("批处理模式下不再支持暂停，请使用停止")
@@ -902,270 +797,72 @@ class LauncherApp:
         self._show_toast("批处理模式下不再支持继续，请重新开始")
 
     def clear_current_run(self) -> None:
-        self._cancel_pause_timeout()
-        self._clear_pause_file()
-        self._terminate_process_tree()
-        if self.current_plan_path:
-            try:
-                Path(self.current_plan_path).unlink(missing_ok=True)
-            except Exception:
-                pass
-        self.task_manager.reset()
-        self.process = None
-        self.reader_thread = None
-        self.selected_task_id = None
-        self.start_time = None
-        self.current_plan_path = ""
-        self.session_log_path = ""
-        self.session_log_offset = 0
-        self.current_stage = "等待启动"
-        self.current_run_label = "待机中"
-        self.visual_progress = 0.0
-        self.batch_target = 0
-        self.batch_saved = 0
-        self.batch_errors = 0
-        self.footer_status.configure(text="已清空当前批次，可重新开始")
-        self._refresh_summary()
-        self._refresh_ui_state()
-        self._render_tasks()
-        self._render_detail()
-        self._show_toast("已清空当前批次")
+        clear_current_run(self)
 
     def stop_run(self) -> None:
-        self._cancel_pause_timeout()
-        self._clear_pause_file()
-        self._terminate_process_tree()
-        self.task_manager.global_state = GLOBAL_FAILED
-        self.batch_errors = max(self.batch_errors, 1)
-        self.footer_status.configure(text="当前批次已停止")
-        self._show_toast("已停止当前批次")
-        self._refresh_ui_state()
+        stop_run(self)
 
     def retry_selected_task(self) -> None:
-        self._show_toast("批处理模式下已关闭单任务重试")
+        retry_selected_task(self)
 
     def copy_selected_task(self) -> None:
-        if not self.selected_task_id:
-            return
-        text = self.task_manager.copy_text(self.selected_task_id)
-        if not text:
-            self._show_toast("当前任务还没有可复制的内容")
-            return
-        self.root.clipboard_clear()
-        self.root.clipboard_append(text)
-        self._show_toast("已复制当前任务内容")
+        copy_selected_task(self)
 
     def export_selected_task(self) -> None:
-        task = self.task_manager.get_task(self.selected_task_id or "")
-        if not task or not task.article_path:
-            self._show_toast("当前任务还没有输出文件")
-            return
-        target = filedialog.asksaveasfilename(
-            title="导出任务文件",
-            defaultextension=".txt",
-            initialfile=Path(task.article_path).name,
-            filetypes=[("Text", "*.txt")],
-        )
-        if not target:
-            return
-        Path(target).write_text(_read_text(task.article_path), encoding="utf-8")
-        self._show_toast("导出完成")
+        export_selected_task(self)
 
     def delete_selected_task(self) -> None:
-        self._show_toast("批处理模式下已关闭单任务删除")
+        delete_selected_task(self)
 
     def _launch_batch(self, count: int, workers: int, platforms: list[str], reset_log: bool) -> None:
-        project_key = self.project_var.get()
-        project_dir = _project_dir(project_key)
-        self.start_time = datetime.now()
-        self.current_stage = "关键词扩展"
-        self.current_run_label = f"{PROJECTS[project_key]['label']} · {count} 篇"
-        self.visual_progress = 0.02
-        if reset_log:
-            self.session_log_path = ""
-            self.session_log_offset = 0
-        self._refresh_summary()
-        self._refresh_ui_state()
-        self.footer_status.configure(text=f"任务启动中 · {self.current_run_label}")
-
-        cmd = self._build_launch_cmd(project_key, workers, count, platforms)
-        env = os.environ.copy()
-        env["PYTHONIOENCODING"] = "utf-8"
-        env["PYTHONUTF8"] = "1"
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        try:
-            self.process = subprocess.Popen(
-                cmd,
-                cwd=project_dir,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                universal_newlines=True,
-                encoding="utf-8",
-                errors="replace",
-                bufsize=1,
-                env=env,
-                creationflags=creationflags,
-            )
-        except Exception as exc:
-            self.process = None
-            self.task_manager.global_state = GLOBAL_FAILED
-            messagebox.showerror(APP_TITLE, f"启动失败：{exc}")
-            self._refresh_ui_state()
-            return
-
-        self.reader_thread = threading.Thread(target=self._read_output, daemon=True)
-        self.reader_thread.start()
-        self._show_toast("任务已开始运行")
+        launch_batch(self, count, workers, platforms, reset_log)
 
     def _build_launch_cmd(self, project_key: str, workers: int, count: int, platforms: list[str]) -> list[str]:
-        base = [sys.executable]
-        if not getattr(sys, "frozen", False):
-            base.append(str(_source_root() / "launcher_gui.pyw"))
-        cmd = base + [
-            "--worker",
-            "--project",
-            project_key,
-            "--workers",
-            str(workers),
-            "--count",
-            str(count),
-            "--platforms",
-            ",".join(platforms),
-            "--generation-mode",
-            self._generation_mode_key(),
-        ]
-        return cmd
+        return _build_launch_cmd(self, project_key, workers, count, platforms)
 
     def _read_output(self) -> None:
-        try:
-            if self.process and self.process.stdout:
-                for line in self.process.stdout:
-                    self.queue.put(("line", line.rstrip("\r\n")))
-        finally:
-            if self.process:
-                self.queue.put(("done", self.process.wait()))
+        _read_output(self)
 
     def _poll_queue(self) -> None:
-        while True:
-            try:
-                kind, payload = self.queue.get_nowait()
-            except queue.Empty:
-                break
-            if kind == "line":
-                self._handle_line(payload)
-            elif kind == "done":
-                self._handle_process_done(payload)
-        self.root.after(100, self._poll_queue)
+        poll_queue(self)
 
     def _handle_line(self, line: str) -> None:
-        if not line.strip():
-            return
-        self._capture_log_path(line)
-        self.current_stage = self._extract_global_stage(line) or self.current_stage
-        self.task_manager.apply_runtime_line(line)
-        if "[SAVE]" in line or "已保存" in line:
-            self.batch_saved = min(self.batch_target, self.batch_saved + 1)
-        if "[ERR]" in line or "失败" in line:
-            self.batch_errors += 1
-        self._refresh_summary()
-        self._render_tasks()
-        self._render_detail()
+        handle_line(self, line)
 
     def _capture_log_path(self, line: str) -> None:
-        match = re.search(r"(logs[\\/]+generation_\d{8}_\d{6}\.jsonl)", line)
-        if not match or self.session_log_path:
-            return
-        self.session_log_path = str(_project_dir(self.project_var.get()) / match.group(1).replace("\\", os.sep).replace("/", os.sep))
-        self.session_log_offset = 0
+        capture_log_path(self, line)
 
     def _extract_global_stage(self, line: str) -> str:
-        for key, value in STAGE_MAPPING.items():
-            if key in line:
-                return value
-        return ""
+        return extract_global_stage(line)
 
     def _sync_session_log(self) -> None:
-        if self.process or self.session_log_path:
-            if not self.session_log_path:
-                self.session_log_path = self._discover_log_path()
-            if self.session_log_path and os.path.exists(self.session_log_path):
-                self._consume_session_log()
-        self.root.after(700, self._sync_session_log)
+        sync_session_log(self)
 
     def _discover_log_path(self) -> str:
-        project_logs = _project_dir(self.project_var.get()) / "logs"
-        if not project_logs.exists() or not self.start_time:
-            return ""
-        candidates = sorted(project_logs.glob("generation_*.jsonl"), key=lambda item: item.stat().st_mtime, reverse=True)
-        threshold = self.start_time.timestamp() - 3
-        for item in candidates:
-            if item.stat().st_mtime >= threshold:
-                return str(item)
-        return str(candidates[0]) if candidates else ""
+        return discover_log_path(self)
 
     def _consume_session_log(self) -> None:
-        try:
-            with open(self.session_log_path, "r", encoding="utf-8") as f:
-                f.seek(self.session_log_offset)
-                for raw in f:
-                    raw = raw.strip()
-                    if not raw:
-                        continue
-                    try:
-                        record = json.loads(raw)
-                    except json.JSONDecodeError:
-                        continue
-                    self.task_manager.apply_record(record, str(_project_dir(self.project_var.get())))
-                self.session_log_offset = f.tell()
-        except OSError:
-            return
-        self._refresh_summary()
-        self._render_tasks()
-        self._render_detail()
+        consume_session_log(self)
 
     def _handle_process_done(self, code: int) -> None:
-        self._cancel_pause_timeout()
-        self._clear_pause_file()
-        self._consume_session_log()
-        self.process = None
-        if code == 0:
-            self.task_manager.global_state = GLOBAL_COMPLETED
-            self.visual_progress = 1.0
-            self.batch_saved = max(self.batch_saved, self.batch_target)
-        else:
-            self.task_manager.global_state = GLOBAL_FAILED
-        self.footer_status.configure(text="任务完成" if code == 0 else f"任务结束 · 退出码 {code}")
-        self._refresh_summary()
-        self._refresh_ui_state()
-        self._render_tasks()
-        self._render_detail()
-        self._show_toast("本轮任务已结束")
+        handle_process_done(self, code)
 
     def _stage_progress_value(self, stage: str) -> float:
         return STAGE_PROGRESS.get(stage, STAGE_PROGRESS.get(self.current_stage, 0.0))
 
     def _target_progress(self) -> float:
         counts = self.task_manager.counts()
-        total = counts["total"]
-        if total == 0 and self.batch_target > 0:
-            completed = min(self.batch_saved + self.batch_errors, self.batch_target)
-            progress = float(completed)
-            if completed < self.batch_target and self._process_is_running():
-                progress += self._stage_progress_value(self.current_stage)
-            if self.task_manager.global_state == GLOBAL_COMPLETED:
-                return 1.0
-            return max(0.0, min(progress / self.batch_target, 0.995))
+        total = max(counts["total"], self.batch_target)
         if total == 0:
             return 0.0
-        completed = counts["success"] + counts["failed"]
-        progress = float(completed)
-        for task in self.task_manager.ordered_tasks():
-            if task.status == TASK_RUNNING:
-                progress += self._stage_progress_value(task.stage)
-        target = progress / total
         if self.task_manager.global_state == GLOBAL_COMPLETED:
             return 1.0
-        return max(0.0, min(target, 0.995))
+        completed = float(counts["success"] + counts["failed"])
+        if counts["total"] == 0:
+            completed = float(min(self.batch_saved + self.batch_errors, self.batch_target))
+        if completed < total and self._process_is_running():
+            completed += self._stage_progress_value(self.current_stage)
+        return max(0.0, min(completed / total, 0.995))
 
     def _animate_progress(self) -> None:
         target = self._target_progress()
@@ -1204,7 +901,6 @@ class LauncherApp:
         self.count_entry.configure(state=entry_state)
         self.side_count_entry.configure(state=entry_state)
         self.workers_entry.configure(state=entry_state)
-        self.template_combo.configure(state=combo_state)
         self.mode_combo.configure(state=combo_state)
         for radio in self.project_radios.values():
             radio.configure(state=entry_state)
@@ -1213,9 +909,6 @@ class LauncherApp:
         self.platform_all_btn.configure(state="normal" if editable else "disabled")
         for btn in self.single_platform_buttons.values():
             btn.configure(state="normal" if editable else "disabled")
-        for btn in (self.template_save_btn, self.template_load_btn, self.template_delete_btn):
-            btn.configure(state="normal" if editable else "disabled")
-
         selected_task = self.task_manager.get_task(self.selected_task_id or "")
         can_retry = bool(selected_task and selected_task.status == TASK_FAILED and not running)
         can_copy = bool(selected_task and selected_task.content)
@@ -1229,9 +922,9 @@ class LauncherApp:
     def _refresh_summary(self) -> None:
         counts = self.task_manager.counts()
         progress = self._target_progress()
-        total = counts["total"] or self.batch_target
-        success = counts["success"] or self.batch_saved
-        failed = counts["failed"] or self.batch_errors
+        total = max(counts["total"], self.batch_target)
+        success = counts["success"] if counts["total"] > 0 else self.batch_saved
+        failed = counts["failed"] if counts["total"] > 0 else self.batch_errors
 
         self.stats_cards["success"]["value"].configure(text=str(success))
         self.stats_cards["success"]["hint"].configure(text=f"总任务 {total}")
@@ -1256,46 +949,93 @@ class LauncherApp:
         self.batch_report.configure(text=self.task_manager.build_batch_report() if counts["total"] else "当前为批处理模式，重点展示整体进度与最终输出结果。")
         self.batch_state_chip.configure(text=GLOBAL_STATE_LABELS[self.task_manager.global_state])
 
-    def _render_tasks(self) -> None:
-        for child in self.task_list.winfo_children():
-            child.destroy()
+    def _create_task_card(self, task: Task, row: int, accent: str, accent_soft: str, selected: bool) -> dict:
+        bar_color = {
+            TASK_SUCCESS: "#22C55E",
+            TASK_FAILED: "#EF4444",
+            TASK_RUNNING: accent,
+            TASK_PENDING: "#94A3B8",
+        }.get(task.status, "#94A3B8")
+        card = self._panel(self.task_list, fg=accent_soft if selected else "#FBFDFF", border=accent if selected else "#E2E8F0", radius=12)
+        card.grid(row=row, column=0, sticky="ew", pady=(0, 6))
+        card.grid_columnconfigure(0, weight=1)
+        bar = ctk.CTkFrame(card, fg_color=bar_color, width=3, corner_radius=0)
+        inner = ctk.CTkFrame(card, fg_color="transparent")
+        inner.pack(fill="x", padx=(12, 12), pady=10)
+        top = ctk.CTkFrame(inner, fg_color="transparent")
+        top.pack(fill="x")
+        number_label = ctk.CTkLabel(top, font=ctk.CTkFont(family="Segoe UI Semibold", size=13, weight="bold"), text_color="#1E293B")
+        number_label.pack(side="left")
+        chip = ctk.CTkLabel(top, corner_radius=999, padx=10, pady=3, font=ctk.CTkFont(family="Microsoft YaHei UI", size=10, weight="bold"))
+        chip.pack(side="right")
+        platform_stage = ctk.CTkLabel(inner, font=ctk.CTkFont(family="Microsoft YaHei UI", size=11), text_color="#64748B")
+        platform_stage.pack(anchor="w", pady=(6, 0))
+        score_summary = ctk.CTkLabel(inner, font=ctk.CTkFont(family="Microsoft YaHei UI", size=11))
+        score_summary.pack(anchor="w", pady=(3, 0))
+        self._bind_click(card, lambda _event, tid=task.id: self.select_task(tid))
+        refs = {"card": card, "bar": bar, "number": number_label, "chip": chip, "platform_stage": platform_stage, "score_summary": score_summary}
+        self._apply_task_card(refs, task, accent, accent_soft, selected)
+        return refs
 
+    def _apply_task_card(self, refs: dict, task: Task, accent: str, accent_soft: str, selected: bool) -> None:
+        bar_color = {
+            TASK_SUCCESS: "#22C55E",
+            TASK_FAILED: "#EF4444",
+            TASK_RUNNING: accent,
+            TASK_PENDING: "#94A3B8",
+        }.get(task.status, "#94A3B8")
+        refs["card"].configure(fg_color=accent_soft if selected else "#FBFDFF", border_color=accent if selected else "#E2E8F0")
+        refs["bar"].configure(fg_color=bar_color)
+        refs["number"].configure(text=f"任务 #{int(task.id):02d}")
+        refs["chip"].configure(text=STATUS_LABELS[task.status], fg_color=self._status_bg(task.status), text_color=self._status_fg(task.status))
+        platform_label = PLATFORM_LABELS.get(task.platform, task.platform)
+        refs["platform_stage"].configure(text=f"{platform_label} · {task.stage}")
+        score_text = f"{int(task.score)} 分" if task.score >= 0 else "待评分"
+        refs["score_summary"].configure(text=f"{task.summary} · {score_text} · {task.recommendation()}", text_color=task.recommendation_color())
+
+    def _render_tasks(self) -> None:
         items = self.task_manager.ordered_tasks()
         finished = self.task_manager.counts()["success"] + self.task_manager.counts()["failed"]
-        if not items and self.batch_target > 0:
-            self.task_counter.configure(text=f"{self.batch_saved + self.batch_errors} / {self.batch_target}")
-        else:
-            self.task_counter.configure(text=f"{finished} / {len(items)}")
+        denominator = max(len(items), self.batch_target)
+        self.task_counter.configure(text=f"{finished} / {denominator}" if denominator > 0 else "0 / 0")
+
         if not items:
-            ctk.CTkLabel(
-                self.task_list,
-                text="当前已回退为批处理模式，不再展示每篇文章的独立任务卡片。",
-                font=ctk.CTkFont(family="Microsoft YaHei UI", size=12),
-                text_color="#8CA0B2",
-            ).grid(row=0, column=0, sticky="w", padx=8, pady=8)
+            for refs in self._task_cards.values():
+                refs["card"].destroy()
+            self._task_cards.clear()
+            if getattr(self, "_empty_card", None) is None:
+                empty_card = self._panel(self.task_list, fg="#FBFDFF", radius=14)
+                empty_card.grid(row=0, column=0, sticky="ew", padx=6, pady=4)
+                empty_inner = ctk.CTkFrame(empty_card, fg_color="transparent")
+                empty_inner.pack(fill="x", padx=20, pady=24)
+                ctk.CTkLabel(empty_inner, text="📋", font=ctk.CTkFont(family="Segoe UI", size=32), text_color="#BCC8D4").pack(anchor="center")
+                ctk.CTkLabel(empty_inner, text="暂无任务数据", font=ctk.CTkFont(family="Microsoft YaHei UI", size=13, weight="bold"), text_color="#8CA0B2").pack(anchor="center", pady=(8, 0))
+                ctk.CTkLabel(empty_inner, text="启动生成后将在此展示每篇文章的独立任务卡片，可单独查看详情、复制内容和导出文件。", font=ctk.CTkFont(family="Microsoft YaHei UI", size=11), text_color="#A8B9C8", wraplength=360, justify="center").pack(anchor="center", pady=(6, 0))
+                self._empty_card = empty_card
             return
+
+        if getattr(self, "_empty_card", None) is not None:
+            self._empty_card.destroy()
+            self._empty_card = None
 
         accent = self._cfg()["accent"]
         accent_soft = self._cfg()["accent_soft"]
+        current_ids = {task.id for task in items}
+
+        for task_id in list(self._task_cards.keys()):
+            if task_id not in current_ids:
+                self._task_cards[task_id]["card"].destroy()
+                del self._task_cards[task_id]
+
         for row, task in enumerate(items):
             selected = task.id == self.selected_task_id
-            card = self._panel(self.task_list, fg=accent_soft if selected else "#FBFDFF", border=accent if selected else "#D8E3EE", radius=14)
-            card.grid(row=row, column=0, sticky="ew", pady=(0, 8))
-            card.grid_columnconfigure(0, weight=1)
-            inner = ctk.CTkFrame(card, fg_color="transparent")
-            inner.pack(fill="x", padx=12, pady=12)
-            top = ctk.CTkFrame(inner, fg_color="transparent")
-            top.pack(fill="x")
-            ctk.CTkLabel(top, text=f"任务 #{int(task.id):02d}", font=ctk.CTkFont(family="Segoe UI Semibold", size=14, weight="bold"), text_color="#133248").pack(side="left")
-            chip = ctk.CTkLabel(top, text=STATUS_LABELS[task.status], corner_radius=999, padx=10, pady=4, font=ctk.CTkFont(family="Microsoft YaHei UI", size=10, weight="bold"))
-            chip.pack(side="right")
-            chip.configure(fg_color=self._status_bg(task.status), text_color=self._status_fg(task.status))
-
-            platform_label = PLATFORM_LABELS.get(task.platform, task.platform)
-            ctk.CTkLabel(inner, text=f"{platform_label} · {task.stage}", font=ctk.CTkFont(family="Microsoft YaHei UI", size=12), text_color="#617A91").pack(anchor="w", pady=(8, 0))
-            score_label = f"{int(task.score)} 分" if task.score >= 0 else "待评分"
-            ctk.CTkLabel(inner, text=f"{task.summary} · {score_label} · {task.recommendation()}", font=ctk.CTkFont(family="Microsoft YaHei UI", size=11), text_color=task.recommendation_color()).pack(anchor="w", pady=(4, 0))
-            self._bind_click(card, lambda _event, task_id=task.id: self.select_task(task_id))
+            if task.id in self._task_cards:
+                refs = self._task_cards[task.id]
+                refs["card"].grid(row=row, column=0, sticky="ew", pady=(0, 6))
+                self._apply_task_card(refs, task, accent, accent_soft, selected)
+            else:
+                refs = self._create_task_card(task, row, accent, accent_soft, selected)
+                self._task_cards[task.id] = refs
 
     def select_task(self, task_id: str) -> None:
         self.selected_task_id = task_id
@@ -1305,15 +1045,15 @@ class LauncherApp:
 
     def _render_detail(self) -> None:
         task = self.task_manager.get_task(self.selected_task_id or "")
-        self._set_textbox(self.preview_box, "")
-        self._set_textbox(self.timeline_box, "")
-        self._set_textbox(self.calls_box, "")
         if not task:
-            self.detail_title_label.configure(text="请选择任务查看详情")
-            self.detail_subtitle.configure(text="")
+            self.detail_title_label.configure(text="任务详情")
+            self.detail_subtitle.configure(text="选择左侧任务卡片查看完整信息")
             self.detail_meta.configure(text="")
             for value in self.detail_metric_labels.values():
-                value.configure(text="--", text_color="#133248")
+                value.configure(text="--", text_color="#94A3B8")
+            self._set_textbox(self.preview_box, "点击任务卡片后，此处将展示文章正文内容。")
+            self._set_textbox(self.timeline_box, "任务时间线将显示生成流程中各阶段的耗时与状态。")
+            self._set_textbox(self.calls_box, "LLM 调用记录将列出每次模型请求的模型、Token 消耗与状态。")
             return
 
         platform_label = PLATFORM_LABELS.get(task.platform, task.platform)
@@ -1337,10 +1077,28 @@ class LauncherApp:
         total_tokens = task.prompt_tokens + task.completion_tokens
         self.detail_metric_labels["tokens"].configure(text=str(total_tokens) if total_tokens else "--", text_color="#133248")
         self.detail_metric_labels["result"].configure(text=task.recommendation(), text_color=task.recommendation_color())
-        self._set_textbox(self.preview_box, task.content or "当前任务还没有可预览内容。")
-        self._set_textbox(self.timeline_box, "\n".join(task.events[-16:]) or "暂无结构化任务流。")
-        self._set_textbox(self.calls_box, self._format_calls(task.llm_calls))
+        preview = task.content or "当前任务还没有可预览内容。"
+        timeline = "\n".join(task.events[-16:]) or "暂无结构化任务流。"
+        calls = self._format_calls(task.llm_calls)
+        new_sig = (task.id, task.status, task.stage, preview, timeline, calls)
+        if getattr(self, "_detail_sig", None) != new_sig:
+            self._detail_sig = new_sig
+            self._set_textbox(self.preview_box, preview)
+            self._set_textbox(self.timeline_box, timeline)
+            self._set_textbox(self.calls_box, calls)
         self._refresh_ui_state()
+
+    def _schedule_task_refresh(self) -> None:
+        """Coalesce rapid _render_tasks / _render_detail calls into a single update."""
+        if self._ui_refresh_scheduled:
+            return
+        self._ui_refresh_scheduled = True
+        self.root.after(250, self._do_task_refresh)
+
+    def _do_task_refresh(self) -> None:
+        self._ui_refresh_scheduled = False
+        self._render_tasks()
+        self._render_detail()
 
     def _format_calls(self, calls: list[dict]) -> str:
         if not calls:
@@ -1396,9 +1154,42 @@ class LauncherApp:
         self._toast_after_id = self.root.after(2600, lambda: self.toast_label.configure(text="", fg_color="transparent"))
 
     def _bind_click(self, widget, callback) -> None:
-        widget.bind("<Button-1>", callback)
-        for child in widget.winfo_children():
-            self._bind_click(child, callback)
+        bind_click(widget, callback)
+
+    def _show_done_popup(self) -> None:
+        counts = self.task_manager.counts()
+        success = counts["success"]
+        failed = counts["failed"]
+        total = max(counts["total"], self.batch_target)
+        ok = failed == 0
+
+        popup = ctk.CTkToplevel(self.root)
+        popup.title("批处理完成")
+        popup.geometry("380x240")
+        popup.resizable(False, False)
+        popup.attributes("-topmost", True)
+        popup.grab_set()
+        popup.configure(fg_color="#FFFFFF")
+        self.root.eval(f'tk::PlaceWindow {popup} center')
+
+        ctk.CTkLabel(popup, text="完成" if ok else "完成", font=ctk.CTkFont(family="Microsoft YaHei UI", size=18, weight="bold"), text_color="#1E293B").pack(pady=(24, 4))
+        ctk.CTkLabel(popup, text=f"成功 {success} · 失败 {failed} · 共 {total} 篇", font=ctk.CTkFont(family="Microsoft YaHei UI", size=12), text_color="#64748B").pack()
+
+        output_root = _project_dir(self.project_var.get()) / "output"
+        output_root.mkdir(exist_ok=True)
+
+        def _open_and_close():
+            self.open_latest_output_folder()
+            popup.destroy()
+
+        btn_frame = ctk.CTkFrame(popup, fg_color="transparent")
+        btn_frame.pack(pady=(20, 0))
+        ctk.CTkButton(btn_frame, text="打开输出目录", font=ctk.CTkFont(family="Microsoft YaHei UI", size=12, weight="bold"),
+                       fg_color=self._cfg()["accent"], hover_color=self._cfg()["accent_deep"], text_color="#FFFFFF",
+                       corner_radius=10, width=140, height=36, command=_open_and_close).pack(side="left", padx=(0, 12))
+        ctk.CTkButton(btn_frame, text="关闭", font=ctk.CTkFont(family="Microsoft YaHei UI", size=12),
+                       fg_color="#E2E8F0", hover_color="#CBD5E1", text_color="#475569",
+                       corner_radius=10, width=100, height=36, command=popup.destroy).pack(side="left")
 
     def open_latest_output_folder(self) -> None:
         output_root = _project_dir(self.project_var.get()) / "output"
@@ -1427,58 +1218,16 @@ class LauncherApp:
         else:
             self._show_toast("暂未找到 TXT 文件")
 
-    def start_review(self) -> None:
-        if self._flask_thread and self._flask_thread.is_alive():
-            webbrowser.open("http://127.0.0.1:5050")
-            return
-
-        project_dir = str(_project_dir(self.project_var.get()))
-        shared_dir = str(_runtime_root() / "shared")
-
-        def run_flask():
-            if project_dir not in sys.path:
-                sys.path.insert(0, project_dir)
-            if shared_dir not in sys.path:
-                sys.path.append(shared_dir)
-            import bootstrap_shared  # noqa: F401
-            from review_ui import app as flask_app
-
-            flask_app.run(host="127.0.0.1", port=5050, debug=False, use_reloader=False)
-
-        self._flask_thread = threading.Thread(target=run_flask, daemon=True)
-        self._flask_thread.start()
-        self.root.after(1200, lambda: webbrowser.open("http://127.0.0.1:5050"))
-        self._show_toast("审核台已在浏览器中打开")
-
     def _cancel_pause_timeout(self) -> None:
         if self._pause_timeout_id:
             self.root.after_cancel(self._pause_timeout_id)
             self._pause_timeout_id = None
 
     def _process_is_running(self) -> bool:
-        return bool(self.process and self.process.poll() is None)
+        return process_is_running(self)
 
     def _terminate_process_tree(self) -> None:
-        if not self.process:
-            return
-        if self.process.poll() is not None:
-            self.process = None
-            return
-        pid = self.process.pid
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        try:
-            subprocess.run(
-                ["taskkill", "/PID", str(pid), "/T", "/F"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-                creationflags=creationflags,
-            )
-        except Exception:
-            try:
-                self.process.terminate()
-            except Exception:
-                pass
+        terminate_process_tree(self)
 
     def _pause_timeout_kill(self) -> None:
         self._pause_timeout_id = None

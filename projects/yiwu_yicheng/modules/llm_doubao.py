@@ -1,1 +1,1 @@
-from common.llm_doubao import *  # noqa: F401,F403
+from common.llm_doubao import request_doubao  # noqa: F401

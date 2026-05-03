@@ -1,0 +1,74 @@
+[
+  {
+    "platform": "sohu",
+    "mode": "info",
+    "hash": "e13ade56d00cbea9d68e1b941cf636506e4c535f92cf8b38de941512b106bf21",
+    "segmented": true
+  },
+  {
+    "platform": "sohu",
+    "mode": "light_exp",
+    "hash": "a92234210d9d6f83e94af00b57689cd844507d90e8642a2582ae472a2c41a4e6",
+    "segmented": true
+  },
+  {
+    "platform": "sohu",
+    "mode": "other_exp",
+    "hash": "f1c8a13d1e07f47afc1fee5c6922623600c4f14987b8437e203d641c6a90be94",
+    "segmented": true
+  },
+  {
+    "platform": "sohu",
+    "mode": "exp",
+    "hash": "ef396478873edfac655717aff839310fc143839bf86a4741ec93219e459bc1c6",
+    "segmented": true
+  },
+  {
+    "platform": "baijiahao",
+    "mode": "info",
+    "hash": "469a7f76f163e4293113dcf2d93e455fd2ab99116790db9430eaf95c471303b9",
+    "segmented": true
+  },
+  {
+    "platform": "baijiahao",
+    "mode": "light_exp",
+    "hash": "4dc9f582a55bd5b5cdc29492405a528a02ff98c374cbd6890f0780188ff4510c",
+    "segmented": true
+  },
+  {
+    "platform": "baijiahao",
+    "mode": "other_exp",
+    "hash": "ba0b29471fae8255716e943a03fba0b0563aee1f79b4c5f6d8eb697290fa3d98",
+    "segmented": true
+  },
+  {
+    "platform": "baijiahao",
+    "mode": "exp",
+    "hash": "9b0945d0bd530825431feb7ec8b7bcdd86663b21408321d00924684288dbbeb0",
+    "segmented": true
+  },
+  {
+    "platform": "toutiao",
+    "mode": "info",
+    "hash": "dffe04d4e6f890d2871b08187c283e13c7b613079a87de057c4aba5bde5c808e",
+    "segmented": true
+  },
+  {
+    "platform": "toutiao",
+    "mode": "light_exp",
+    "hash": "5b3423a50e01495e05c8ee19cdbba24ca2a15793980685ecae6fa9f9b60fd769",
+    "segmented": true
+  },
+  {
+    "platform": "toutiao",
+    "mode": "other_exp",
+    "hash": "23b007f4997f69328f392aed491c97c176336fc91ca96f9a90e2b48f73f0f3a0",
+    "segmented": true
+  },
+  {
+    "platform": "toutiao",
+    "mode": "exp",
+    "hash": "162473f1d833abfeb84b1e47b308b88df1d025bdaac9c3a4d7232b7fc8a84500",
+    "segmented": true
+  }
+]

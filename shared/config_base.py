@@ -6,8 +6,8 @@ GENERATOR_PROVIDER = "doubao"
 AUX_PROVIDER = "doubao"
 MODEL_TYPE = GENERATOR_PROVIDER
 
-# --- 闃舵妯″瀷璺敱 ---
-# 鍙€夊€硷細doubao / qwen / glm / openai / packy
+# --- 阶段模型路由 ---
+# 可选值：doubao / qwen / glm / openai / packy
 # 快速模式仍使用原豆包链路；下面的阶段路由主要用于 quality 模式。
 KEYWORD_PROVIDER = "doubao"
 DRAFT_PROVIDER = "doubao"
@@ -21,13 +21,13 @@ DOUBAO_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 DOUBAO_MAIN_MODEL = "doubao-seed-2-0-pro-260215"
 DOUBAO_FAST_MODEL = "doubao-seed-2-0-lite-260215"
 
-# --- Qwen锛堥€氫箟鍗冮棶 OpenAI compatible锛?---
+# --- Qwen（通义千问 OpenAI compatible）---
 QWEN_API_KEY = "sk-3a77256a152f4bd7bc6f64ccdd8dad01"
 QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 QWEN_MAIN_MODEL = "qwen3.6-plus"
 QWEN_FAST_MODEL = "qwen3.6"
 
-# --- GLM锛堟櫤璋?OpenAI compatible锛?---
+# --- GLM（智谱 OpenAI compatible）---
 GLM_API_KEY = "df712fe9fa9b468f9e92caa0708e17b4.6S60KkrrgVvj016P"
 GLM_BASE_URL = "https://open.bigmodel.cn/api/paas/v4/"
 GLM_MAIN_MODEL = "glm-5.1"

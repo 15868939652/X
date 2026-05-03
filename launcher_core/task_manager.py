@@ -165,9 +165,15 @@ class TaskManager:
         self.add_event(task.id, line)
 
     def apply_record(self, record: dict, project_dir: str) -> Task | None:
-        task = self.get_task(record.get("task_id", ""))
-        if not task:
+        task_id = str(record.get("task_id", ""))
+        if not task_id:
             return None
+        task = self.get_task(task_id)
+        if not task:
+            task = Task(id=task_id, platform=record.get("platform", ""), base_keyword=record.get("base_keyword", ""))
+            self.tasks[task.id] = task
+            self.task_order.append(task.id)
+
         task.platform = record.get("platform", task.platform)
         task.base_keyword = record.get("base_keyword", task.base_keyword)
         task.keyword = record.get("keyword", task.keyword)

@@ -1,1 +1,1 @@
-from common.scorer import *  # noqa: F401,F403
+from common.scorer import score_article, score_article_detailed  # noqa: F401

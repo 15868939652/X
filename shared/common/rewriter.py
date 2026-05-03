@@ -1,9 +1,30 @@
+import json
 import os
 import random
+import threading
+from datetime import datetime
 
 from config import AUX_PROVIDER, GENERATOR_PROVIDER, REWRITE_PROVIDER
 from modules.llm import require_llm_content
 from project_paths import prompt_path
+
+_REWRITE_DIFF_LOCK = threading.Lock()
+_LOG_REWRITE_DIFF = os.environ.get("LOG_REWRITE_DIFF") == "1"
+
+
+def _write_rewrite_diff(stage: str, before: str, after: str) -> None:
+    if not _LOG_REWRITE_DIFF:
+        return
+    os.makedirs("logs", exist_ok=True)
+    entry = {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "stage": stage,
+        "before": before[:500],
+        "after": after[:500],
+    }
+    with _REWRITE_DIFF_LOCK:
+        with open(os.path.join("logs", "rewrite_diff.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 _VARIATION_STYLES = [
     "从个人经历角度重新表达",
@@ -71,7 +92,9 @@ def semantic_variation(text: str) -> str:
 
 def apply_random_rewrite(text: str) -> str:
     fn = random.choice([rewrite_text, restructure_text, semantic_variation])
-    return fn(text)
+    result = fn(text)
+    _write_rewrite_diff("random_rewrite", text, result)
+    return result
 
 
 def rewrite_segment(segment_name: str, text: str, problems: list) -> str:
@@ -88,7 +111,9 @@ def rewrite_segment(segment_name: str, text: str, problems: list) -> str:
         empty_error=f"{segment_name} segment rewrite returned empty content",
         stage=f"rewrite_segment:{segment_name}",
     )
-    return (result or text).strip()
+    result = (result or text).strip()
+    _write_rewrite_diff(f"segment_{segment_name}", text, result)
+    return result
 
 
 def pick_target_segments(problems: list) -> list:

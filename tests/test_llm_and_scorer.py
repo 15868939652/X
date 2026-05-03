@@ -96,5 +96,48 @@ class ScorerParsingTests(unittest.TestCase):
         self.assertEqual(parsed["status"], "error")
 
 
+class ScoreFusionTests(unittest.TestCase):
+    def test_weighted_blend_above_50(self) -> None:
+        fake_llm = {"score": 80, "problems": ["summary"], "reason": "结尾总结", "attempts": 1, "provider": "fake", "model": "fake"}
+        fake_rule = {"score": 90, "problems": ["length_too_long"], "reason": "字数超限", "length": 600, "repetition": 0.1}
+        with mock.patch("common.scorer.score_llm", return_value=fake_llm):
+            with mock.patch("common.scorer.rule_score", return_value=fake_rule):
+                result = scorer.score_article_detailed("test article", platform="sohu", mode="info")
+        self.assertEqual(result["score"], round(80 * 0.5 + 90 * 0.5))
+
+    def test_llm_score_below_50_dominates(self) -> None:
+        fake_llm = {"score": 40, "problems": ["ai_taste"], "reason": "AI味重", "attempts": 1, "provider": "fake", "model": "fake"}
+        fake_rule = {"score": 90, "problems": [], "reason": "无规则扣分项", "length": 500, "repetition": 0.05}
+        with mock.patch("common.scorer.score_llm", return_value=fake_llm):
+            with mock.patch("common.scorer.rule_score", return_value=fake_rule):
+                result = scorer.score_article_detailed("test article", platform="sohu", mode="info")
+        self.assertEqual(result["score"], 40)
+
+    def test_llm_error_propagates(self) -> None:
+        fake_llm = {"score": -1, "problems": ["scorer_error"], "reason": "评分失败", "attempts": 1, "provider": "fake", "model": "fake", "format": "error", "status": "error"}
+        fake_rule = {"score": 90, "problems": [], "reason": "无规则扣分项", "length": 500, "repetition": 0.05}
+        with mock.patch("common.scorer.score_llm", return_value=fake_llm):
+            with mock.patch("common.scorer.rule_score", return_value=fake_rule):
+                result = scorer.score_article_detailed("test article")
+        self.assertEqual(result["score"], -1)
+
+
+class ConfigValidationTests(unittest.TestCase):
+    def test_provider_key_empty_string_detected(self) -> None:
+        with mock.patch.dict(llm._PROVIDER_KEYS, {"empty_provider": ""}, clear=False):
+            error = llm._provider_key_missing("empty_provider")
+            self.assertTrue(error)
+
+    def test_provider_key_valid_detected(self) -> None:
+        with mock.patch.dict(llm._PROVIDER_KEYS, {"valid_provider": "sk-abc123"}, clear=False):
+            error = llm._provider_key_missing("valid_provider")
+            self.assertFalse(error)
+
+    def test_provider_not_in_keys_detected(self) -> None:
+        with mock.patch.dict(llm._PROVIDER_KEYS, {}, clear=True):
+            error = llm._provider_key_missing("unknown_provider")
+            self.assertTrue(error)
+
+
 if __name__ == "__main__":
     unittest.main()

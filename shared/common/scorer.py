@@ -13,9 +13,7 @@ from modules.llm import call_llm_result
 from modules.rule_scorer import rule_score
 from pathing import shared_prompt_path
 
-W_LLM = 0.5
-W_RULE = 0.5
-SCORER_ERROR_TAG = "scorer_error"
+from constants import W_LLM, W_RULE, SCORER_ERROR_TAG
 
 
 def _load_prompt() -> str:
