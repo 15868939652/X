@@ -26,9 +26,9 @@ from config import (
     QWEN_FAST_MODEL,
     QWEN_MAIN_MODEL,
 )
-from modules.llm_doubao import request_doubao
-from modules.llm_packy import request_packy
-from modules.logger import record_llm_call
+from common.llm_doubao import request_doubao
+from common.llm_packy import request_packy
+from common.logger import record_llm_call
 
 RETRY_BACKOFF_SECONDS = (1, 2, 4)
 LLM_TIMEOUT_FAST = httpx.Timeout(120.0, connect=15.0, read=110.0, write=60.0)

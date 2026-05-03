@@ -1,6 +1,6 @@
 from project_paths import prompt_path
 from config import BRAND, AUX_PROVIDER
-from modules.llm import call_llm_result
+from common.llm import call_llm_result
 from modules.profile_loader import get_other_brand_aliases
 
 

@@ -1,7 +1,7 @@
 import os
 
 from config import ANTI_AI_PROVIDER, AUX_PROVIDER
-from modules.llm import require_llm_content
+from common.llm import require_llm_content
 from project_paths import prompt_path
 
 

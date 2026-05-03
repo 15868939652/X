@@ -9,8 +9,8 @@ from typing import Dict
 import os
 
 from config import AUX_PROVIDER, SCORE_PROVIDER, SCORER_USE_PRO
-from modules.llm import call_llm_result
-from modules.rule_scorer import rule_score
+from common.llm import call_llm_result
+from common.rule_scorer import rule_score
 from pathing import shared_prompt_path
 
 from constants import W_LLM, W_RULE, SCORER_ERROR_TAG

@@ -5,11 +5,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 from config import BATCH_SIZE, BRAND, CONCURRENT_WORKERS, OUTPUT_PER_KEYWORD
-from modules import logger
-from modules.generator import generate_article
+from common import logger
+from common.generator_core import generate_article
 from modules.keyword import expand_one
 from modules.profile_loader import get_active_profile
-from modules.progress import (
+from common.progress import (
     console,
     show_article_header,
     show_done,

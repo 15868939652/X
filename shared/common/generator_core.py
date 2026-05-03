@@ -5,14 +5,14 @@ import time
 from datetime import datetime
 
 from config import BRAND, DRAFT_PROVIDER, GENERATOR_PROVIDER, MAX_RETRY, MIN_SCORE, PLATFORM_MIN_SCORE
-from modules.anti_ai import anti_ai_pipeline
-from modules.llm import call_llm_result
+from common.anti_ai import anti_ai_pipeline
+from common.llm import call_llm_result
 from modules.profile_loader import get_active_profile, get_other_brand_aliases
-from modules.progress import show_done, show_params, show_retry, show_score, step
+from common.progress import show_done, show_params, show_retry, show_score, step
 from modules.randomizer import random_profile, random_style, random_trigger
-from modules.rewriter import apply_random_rewrite, pick_target_segments, rewrite_segment
-from modules.rule_scorer import rule_score
-from modules.scorer import score_article_detailed
+from common.rewriter import apply_random_rewrite, pick_target_segments, rewrite_segment
+from common.rule_scorer import rule_score
+from common.scorer import score_article_detailed
 from common.prompt_parser import (
     SECTION_PATTERNS,
     extract_segments,

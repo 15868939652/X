@@ -5,7 +5,7 @@ import threading
 from datetime import datetime
 
 from config import AUX_PROVIDER, GENERATOR_PROVIDER, REWRITE_PROVIDER
-from modules.llm import require_llm_content
+from common.llm import require_llm_content
 from project_paths import prompt_path
 
 _REWRITE_DIFF_LOCK = threading.Lock()
